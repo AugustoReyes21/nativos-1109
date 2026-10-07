@@ -198,3 +198,18 @@ describe('audit log', () => {
     await expect(db.query('TRUNCATE audit_log')).rejects.toMatchObject({ code: '23514' });
   });
 });
+
+describe('paid marker (004)', () => {
+  it('is set by the database when a payment is recorded', async () => {
+    const id = await order(); await pay(id, await shift());
+    expect((await one<{ paid: boolean }>('SELECT paid_at IS NOT NULL AS paid FROM orders WHERE id=$1', [id])).paid).toBe(true);
+  });
+
+  it('cannot be forged on an unpaid order, cleared on a paid one, or set at insert', async () => {
+    const unpaid = await order();
+    await expect(db.query('UPDATE orders SET paid_at=now() WHERE id=$1', [unpaid])).rejects.toMatchObject({ code: '23514' });
+    const paid = await order(); await pay(paid, await shift());
+    await expect(db.query('UPDATE orders SET paid_at=NULL WHERE id=$1', [paid])).rejects.toMatchObject({ code: '23514' });
+    await expect(db.query('INSERT INTO orders(table_id,user_id,total_cents,paid_at) VALUES ($1,$2,5000,now())', [f.table, f.user])).rejects.toMatchObject({ code: '23514' });
+  });
+});

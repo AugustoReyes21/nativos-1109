@@ -1,5 +1,17 @@
 # Verificación
 
+## Selección exclusiva antes de crear órdenes — 2026-10-07
+
+`tests/table-claims.test.ts` añade nueve casos con PostgreSQL real: clics simultáneos, bloqueo sin orden, API directa, RBAC/CSRF, UUID/replay, expiración, renovación/liberación atrasadas, cambio atómico, logout, orden activa y conservación del intento idempotente entre generaciones. Suite completa: **103/103** pasan.
+
+`e2e/table-claims.spec.ts` usa dos sesiones de mesero reales: el segundo ve la mesa reservada/deshabilitada, la DB confirma cero órdenes, la API rechaza seleccionar con 409, y descartar permite al siguiente mesero tomarla. Junto al recorrido POS existente: **6/6 E2E** en escritorio/tablet/móvil en la primera ejecución completa. Se reejecutan tras ajustes finales; resultado final en PR #7. No mocks ni eliminación de aserciones anteriores. Contrato y límites: `TABLE_CLAIMS.md`.
+
+## Sala Nativos — 2026-10-07, PR #7
+
+`tests/table-snapshot.test.ts`: creación idempotente, ediciones concurrentes con versión (200/409), snapshot de nombre/nivel en orden y recibo, integridad del snapshot en DB, estado de mesa pagada pero no entregada, y upgrade de historial existente pagado/cancelado con guards restaurados. Cuatro pruebas pasan; suite completa: **94/94** en 5110761, seguida de **3/3 E2E**. Lint/typecheck/build pasan; npm audit informa 0 vulnerabilidades. Bundle inicial 120.41 KB gzip (CSS 5.71 KB). CI y revisión independiente se consultan en PR #7, no se presumen a partir de este resultado local.
+
+`e2e/pos.spec.ts`: recorrido real con mesa redonda de seis plazas en nivel 2, selección por teclado, borrador conservado al navegar, señal Para servir por SSE, nivel en KDS/recibo, vista lista, movimiento reducido, ausencia de overflow, reintento idempotente después de pérdida de respuesta, reconexión y cobro. 3/3 pasan después del ajuste móvil compacto; capturas en `test-results/floor-{desktop,tablet,mobile}.png` (ignoradas por Git). No se probaron dispositivos físicos del restaurante. Revisión axe independiente asignada a Claude, no declarada aprobada.
+
 Fecha: 2026-10-07. Entorno local: Windows, Node 24.18.0, PostgreSQL 17 en Docker. No son mediciones del restaurante o Render.
 
 ## Ejecutar
@@ -52,11 +64,13 @@ Repetición final con migraciones 001+002+003: 396 recorridos, 2777 requests, 27
 Smoke del contenedor Linux en NODE_ENV=production: readiness 200, UI estática 200, HSTS presente y hash/verificación Argon2id nativo correctos. No equivale a despliegue Render.
 
 Primer DAST remoto detectó que NODE_ENV=test del workflow afectaba el bundle React y emitía avisos de comentarios/timestamps de dependencias de desarrollo. El build web ahora fija NODE_ENV=production dentro de su proceso, independientemente del entorno de tests. No se silenciaron alertas. Se corrigió también la subida de reportes ZAP desde el directorio oculto de artefactos.
+
 # Revalidación de seguridad HTTP y CI
 
 La suite ahora incluye 80 pruebas: 3 nuevas de lectura SARIF (extensiones/defaults/fail-closed) y 3 de CSRF/rate limiting además de las 74 existentes. Los clientes de prueba obtienen `GET /api/auth/csrf` antes de mutar; los replays de refresh siguen enviando la credencial anterior y la clave original, no se debilitan las aserciones de robo/reutilización.
 
 CodeQL se verifica por alertas individuales y por gate local del SARIF. Un job verde anterior omitía metadatos en extensions; no usar esa ejecución como evidencia de ausencia de alertas. Resultados finales por commit: PR #2. La carga previa al token firmado no describe el rendimiento de la nueva versión: se requiere reejecutar `load/pos.js` actualizado.
+
 # Validación de publicación — 2026-10-07
 
 Commit 169d9d3: 85 pruebas únicas (`npm test` descubre todas las suites) y 3 E2E desktop/tablet/mobile pasan. CI remoto 37651290538, ZAP 37651290459 exitosos. Gitleaks conserva escaneo completo con una única excepción histórica revisada de fixture TOTP, documentada en SECURITY.md; ninguna credencial real fue incluida. Render publicó ese commit tras gates verdes. Smoke remoto: HTTPS, `/`, `/health/live`, `/health/ready` 200; administrador no recibe sesión antes de enrollment MFA; correo de configuración aceptado por SMTP, recepción en inbox no verificada. No se ejecutó carga ni se crearon ventas ficticias en la base desplegada.

@@ -32,6 +32,8 @@ export function Orders({
       amount_cents: number;
       method: string;
       change_cents: number;
+      table_name: string;
+      table_floor: number;
     };
     items: Item[];
   } | null>(null);
@@ -91,7 +93,7 @@ export function Orders({
                 </span>
               </div>
               <p className="muted">
-                {o.waiter} ·{" "}
+                Nivel {o.table_floor} · {o.waiter} ·{" "}
                 {new Date(o.created_at).toLocaleTimeString("es-GT", {
                   hour: "2-digit",
                   minute: "2-digit",
@@ -221,6 +223,9 @@ export function Orders({
             <h2>Nativos1109</h2>
             <p>Comprobante interno · No es factura fiscal</p>
             <h3>Orden #{receipt.payment.number}</h3>
+            <p>
+              {receipt.payment.table_name} · Nivel {receipt.payment.table_floor}
+            </p>
             {receipt.items.map((i, n) => (
               <p key={n}>
                 {i.quantity} × {i.name} · {money(i.quantity * i.price_cents)}

@@ -11,6 +11,12 @@ import {
 } from "./common.js";
 import { passwordHash, passwordSchema, total } from "./security.js";
 import type { auth } from "./auth.js";
+import {
+  tableClaims,
+  lockTables,
+  assertTableAccess,
+  releaseAfterOrder,
+} from "./table-claims.js";
 
 type Product = {
   id: string;
@@ -34,6 +40,15 @@ type Shift = {
   closed_at: Date | null;
 };
 const name = z.string().trim().min(1).max(100);
+const tableSchema = z
+  .object({
+    name,
+    floor: z.number().int().min(1).max(2).default(1),
+    capacity: z.number().int().min(1).max(12).default(4),
+    shape: z.enum(["square", "round", "rectangle"]).default("square"),
+    displayOrder: z.number().int().min(0).max(999).default(0),
+  })
+  .strict();
 const cents = z.number().int().min(0).max(1000000000);
 const itemsSchema = z
   .array(
@@ -54,6 +69,7 @@ const itemsSchema = z
 const orderSchema = z
   .object({
     tableId: idSchema,
+    claimId: idSchema.optional(),
     notes: z.string().trim().max(500).default(""),
     items: itemsSchema,
   })
@@ -90,11 +106,14 @@ async function ownedOrder(tx: TX, req: Request, id: string) {
 export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   const p = security.permit;
   app.use("/api", security.requireUser);
+  tableClaims(app, db, security);
   app.get("/api/catalog", p("products.read"), async (_req, res) => {
     const [products, categories, tables] = await Promise.all([
       db.query("SELECT * FROM products ORDER BY name"),
       db.query("SELECT * FROM categories ORDER BY name"),
-      db.query("SELECT * FROM restaurant_tables WHERE active ORDER BY name"),
+      db.query(
+        "SELECT * FROM restaurant_tables WHERE active ORDER BY floor,display_order,name",
+      ),
     ]);
     res.json({
       products: products.rows,
@@ -111,6 +130,40 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       ).rows[0],
     ),
   );
+  app.get("/api/tables/status", p("orders.read"), async (req, res) => {
+    const me = identity(req);
+    const result = await db.query(
+      `WITH active AS (
+      SELECT id,table_id,user_id,status,paid_at,total_cents,created_at FROM orders
+      WHERE status IN ('PENDIENTE','EN_PREPARACION','LISTO')
+      UNION ALL
+      SELECT id,table_id,user_id,status,paid_at,total_cents,created_at FROM orders
+      WHERE status='ENTREGADO' AND paid_at IS NULL
+    ), claims AS (SELECT c.* FROM table_claims c JOIN sessions s ON s.id=c.session_id
+      WHERE c.expires_at>clock_timestamp() AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp())
+    SELECT t.id AS "tableId",
+      CASE WHEN count(o.id)=0 THEN CASE WHEN c.table_id IS NOT NULL THEN 'reserved' ELSE 'available' END
+        WHEN bool_or(o.status='LISTO') THEN 'ready'
+        WHEN bool_or(o.status='ENTREGADO' AND o.paid_at IS NULL) THEN 'payment'
+        ELSE 'service' END AS state,
+      count(o.id)::int AS "openOrders", min(o.created_at) AS since,
+      coalesce(bool_or(o.user_id=$1),false) AS mine,
+      (coalesce(bool_or(o.user_id<>$1),false) OR (c.table_id IS NOT NULL AND (c.user_id<>$1 OR c.session_id<>$3))) AS "blocked",
+      CASE WHEN c.user_id=$1 AND c.session_id=$3 THEN c.claim_id END AS "claimId",
+      c.expires_at AS "claimExpiresAt",
+      CASE WHEN $2 THEN coalesce(sum(o.total_cents) FILTER (WHERE o.paid_at IS NULL),0) END AS "pendingCents"
+      FROM restaurant_tables t LEFT JOIN active o ON o.table_id=t.id LEFT JOIN claims c ON c.table_id=t.id WHERE t.active
+      GROUP BY t.id,c.table_id,c.user_id,c.session_id,c.claim_id,c.expires_at ORDER BY t.floor,t.display_order,t.name`,
+      [me.id, me.permissions.includes("payments.create"), me.sessionId],
+    );
+    res.json(
+      result.rows.map(({ pendingCents, ...row }) =>
+        me.permissions.includes("payments.create")
+          ? { ...row, pendingCents: Number(pendingCents) }
+          : row,
+      ),
+    );
+  });
   app.patch("/api/settings", p("settings.manage"), async (req, res) => {
     const input = z.object({ name }).strict().parse(req.body);
     await transaction(db, async (tx) => {
@@ -121,8 +174,8 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     });
     res.json({ ok: true });
   });
-  for (const kind of ["categories", "tables"] as const) {
-    const table = kind === "categories" ? "categories" : "restaurant_tables";
+  for (const kind of ["categories"] as const) {
+    const table = "categories";
     app.post(
       `/api/${kind}`,
       p(kind === "categories" ? "products.write" : "settings.manage"),
@@ -146,6 +199,81 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       },
     );
   }
+  app.post("/api/tables", p("settings.manage"), async (req, res) => {
+    const input = tableSchema.parse(req.body);
+    const result = await transaction(db, (tx) =>
+      idempotent(tx, req, "create-tables", input, async () => {
+        const r = (
+          await tx.query(
+            `INSERT INTO restaurant_tables(name,floor,capacity,shape,display_order)
+        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+            [
+              input.name,
+              input.floor,
+              input.capacity,
+              input.shape,
+              input.displayOrder,
+            ],
+          )
+        ).rows[0] as { id: string };
+        await audit(
+          tx,
+          req,
+          "TABLE_CREATED",
+          "tables",
+          r.id,
+          "SUCCESS",
+          undefined,
+          input,
+        );
+        await changed(tx);
+        return r;
+      }),
+    );
+    res.status(201).json(result);
+  });
+  app.patch("/api/tables/:id", p("settings.manage"), async (req, res) => {
+    const id = idSchema.parse(req.params.id);
+    const input = tableSchema
+      .extend({ version: z.number().int().positive() })
+      .parse(req.body);
+    const result = await transaction(db, (tx) =>
+      idempotent(tx, req, "update-table:" + id, input, async () => {
+        const r = await tx.query(
+          `UPDATE restaurant_tables SET name=$1,floor=$2,capacity=$3,shape=$4,
+        display_order=$5,version=version+1 WHERE id=$6 AND version=$7 AND active RETURNING *`,
+          [
+            input.name,
+            input.floor,
+            input.capacity,
+            input.shape,
+            input.displayOrder,
+            id,
+            input.version,
+          ],
+        );
+        if (!r.rowCount)
+          fail(
+            409,
+            "TABLE_CHANGED",
+            "La mesa cambió. Actualiza antes de guardar",
+          );
+        await audit(
+          tx,
+          req,
+          "TABLE_UPDATED",
+          "tables",
+          id,
+          "SUCCESS",
+          undefined,
+          input,
+        );
+        await changed(tx);
+        return r.rows[0];
+      }),
+    );
+    res.json(result);
+  });
   app.post("/api/products", p("products.write"), async (req, res) => {
     const input = z
       .object({
@@ -241,16 +369,22 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       me.permissions.includes("orders.create") &&
       !me.permissions.includes("payments.create");
     const result = await db.query(
-      `SELECT o.*,t.name AS table_name,u.name AS waiter,
+      // Each branch is index-backed; a single OR forced a scan of the full history.
+      `WITH visible AS (
+        SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND status IN ('PENDIENTE','EN_PREPARACION','LISTO')
+        UNION
+        SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND paid_at IS NULL AND status<>'CANCELADO'
+        UNION
+        (SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND status IN ('ENTREGADO','CANCELADO') AND created_at>now()-interval '24 hours'
+          ORDER BY created_at DESC LIMIT 200))
+      SELECT o.*,u.name AS waiter,
       (SELECT json_agg(i ORDER BY i.name) FROM order_items i WHERE i.order_id=o.id) AS items,
-      EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id) AS paid
-      FROM orders o JOIN restaurant_tables t ON t.id=o.table_id JOIN users u ON u.id=o.user_id
-      WHERE ($1::uuid IS NULL OR o.user_id=$1) AND (
-        o.status IN ('PENDIENTE','EN_PREPARACION','LISTO')
-        OR (o.status<>'CANCELADO' AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id))
-        OR o.id IN (SELECT h.id FROM orders h WHERE ($1::uuid IS NULL OR h.user_id=$1)
-          AND h.status IN ('ENTREGADO','CANCELADO') AND h.created_at>now()-interval '24 hours'
-          ORDER BY h.created_at DESC LIMIT 200))
+      o.paid_at IS NOT NULL AS paid
+      FROM visible v JOIN orders o ON o.id=v.id
+      JOIN users u ON u.id=o.user_id
       ORDER BY o.created_at`,
       [ownOnly ? me.id : null],
     );
@@ -259,63 +393,77 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   app.post("/api/orders", p("orders.create"), async (req, res) => {
     const input = orderSchema.parse(req.body);
     const result = await transaction(db, (tx) =>
-      idempotent(tx, req, "create-order", input, async () => {
-        if (
-          !(
-            await tx.query(
-              "SELECT id FROM restaurant_tables WHERE id=$1 AND active FOR SHARE",
-              [input.tableId],
+      idempotent(
+        tx,
+        req,
+        "create-order",
+        // Preserve the pre-lease canonical field order for existing retry hashes.
+        { tableId: input.tableId, notes: input.notes, items: input.items },
+        async () => {
+          await lockTables(tx, [input.tableId]);
+          await assertTableAccess(tx, req, input.tableId, input.claimId);
+          const products = (
+            await tx.query<Product>(
+              "SELECT * FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE",
+              [input.items.map((i) => i.productId)],
             )
-          ).rowCount
-        )
-          fail(400, "INVALID_TABLE", "Mesa no disponible");
-        const products = (
-          await tx.query<Product>(
-            "SELECT * FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE",
-            [input.items.map((i) => i.productId)],
-          )
-        ).rows;
-        const items = input.items.map((item) => {
-          const product = products.find((p) => p.id === item.productId);
-          if (!product?.active || product.stock < item.quantity)
-            return fail(
-              409,
-              "PRODUCT_OUT_OF_STOCK",
-              "El producto ya no está disponible",
+          ).rows;
+          const items = input.items.map((item) => {
+            const product = products.find((p) => p.id === item.productId);
+            if (!product?.active || product.stock < item.quantity)
+              return fail(
+                409,
+                "PRODUCT_OUT_OF_STOCK",
+                "El producto ya no está disponible",
+              );
+            return {
+              ...item,
+              name: product.name,
+              price_cents: product.price_cents,
+            };
+          });
+          const order = (
+            await tx.query<Order>(
+              "INSERT INTO orders(table_id,user_id,total_cents,notes) VALUES ($1,$2,$3,$4) RETURNING *",
+              [input.tableId, identity(req).id, total(items), input.notes],
+            )
+          ).rows[0]!;
+          for (const item of items) {
+            await tx.query(
+              "UPDATE products SET stock=stock-$1,version=version+1,updated_at=now() WHERE id=$2",
+              [item.quantity, item.productId],
             );
-          return {
-            ...item,
-            name: product.name,
-            price_cents: product.price_cents,
-          };
-        });
-        const order = (
-          await tx.query<Order>(
-            "INSERT INTO orders(table_id,user_id,total_cents,notes) VALUES ($1,$2,$3,$4) RETURNING *",
-            [input.tableId, identity(req).id, total(items), input.notes],
-          )
-        ).rows[0]!;
-        for (const item of items) {
-          await tx.query(
-            "UPDATE products SET stock=stock-$1,version=version+1,updated_at=now() WHERE id=$2",
-            [item.quantity, item.productId],
+            await tx.query(
+              "INSERT INTO order_items(order_id,product_id,name,quantity,price_cents,notes) VALUES ($1,$2,$3,$4,$5,$6)",
+              [
+                order.id,
+                item.productId,
+                item.name,
+                item.quantity,
+                item.price_cents,
+                item.notes,
+              ],
+            );
+          }
+          await audit(
+            tx,
+            req,
+            "ORDER_CREATED",
+            "orders",
+            order.id,
+            "SUCCESS",
+            undefined,
+            {
+              tableId: input.tableId,
+              totalCents: order.total_cents,
+              items: items.length,
+            },
           );
-          await tx.query(
-            "INSERT INTO order_items(order_id,product_id,name,quantity,price_cents,notes) VALUES ($1,$2,$3,$4,$5,$6)",
-            [
-              order.id,
-              item.productId,
-              item.name,
-              item.quantity,
-              item.price_cents,
-              item.notes,
-            ],
-          );
-        }
-        await audit(tx, req, "ORDER_CREATED", "orders", order.id);
-        await changed(tx);
-        return order;
-      }),
+          await releaseAfterOrder(tx, req, input.tableId, input.claimId);
+          await changed(tx);
+          return order;
+        },
+      ),
     );
     res.status(201).json(result);
   });
@@ -455,7 +603,20 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             [s.id, identity(req).id, input.amountCents, input.reason],
           )
         ).rows[0]!;
-        await audit(tx, req, "CASH_MOVEMENT_CREATED", "cash_movements", r.id);
+        await audit(
+          tx,
+          req,
+          "CASH_MOVEMENT_CREATED",
+          "cash_movements",
+          r.id,
+          "SUCCESS",
+          undefined,
+          {
+            shiftId: s.id,
+            amountCents: input.amountCents,
+            reason: input.reason,
+          },
+        );
         await changed(tx);
         return r;
       }),
@@ -580,7 +741,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     const id = idSchema.parse(req.params.id);
     const payment = (
       await db.query(
-        "SELECT p.*,o.number,o.notes,t.name AS table_name FROM payments p JOIN orders o ON o.id=p.order_id JOIN restaurant_tables t ON t.id=o.table_id WHERE p.order_id=$1",
+        "SELECT p.*,o.number,o.notes,o.table_name,o.table_floor FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.order_id=$1",
         [id],
       )
     ).rows[0];

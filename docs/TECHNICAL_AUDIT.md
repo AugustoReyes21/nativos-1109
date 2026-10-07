@@ -1,5 +1,18 @@
 # Auditoría técnica — Nativos1109
 
+## Exclusión operativa solicitada por el propietario — 2026-10-07
+
+**HIGH / P1:** el estado global no impedía que dos meseros seleccionaran una mesa antes de existir una orden. Añadida reserva temporal PostgreSQL (007), lock exclusivo por mesa compartido por adquisición y creación de órdenes, comprobación de propietario/sesión, vencimiento y generación para renovaciones/liberaciones. Pruebas reales de carrera y doble sesión demuestran un único ganador sin crear órdenes vacías. La UI también bloquea la mesa, pero no es la barrera de seguridad. Revisión de Claude solicitada, aún pendiente; publicación en Render no realizada en este bloque.
+
+## Incremento UI de dos niveles — PR #7, 2026-10-07
+
+- **HIGH / D1 (Claude):** calcular disponibilidad a partir de órdenes filtradas por mesero oculta actividad de compañeros. Corregido antes de desplegar UI: `/api/tables/status` agrega todas las órdenes; importes requieren `payments.create`; no expone ítems ni usuarios ajenos. Revisión adversarial independiente pendiente.
+- **MEDIUM / D5 (Claude):** renombrar mesas alteraba etiquetas de órdenes/recibos históricos. Corregido con 006, snapshot inmutable en PostgreSQL y pruebas de API/DB/upgrade pagado y cancelado. Los datos antiguos solo pueden rellenarse desde configuración actual; no es reconstrucción histórica.
+- **MEDIUM / UX:** falta de planta/nivel, mesas visuales y pérdida del borrador al navegar. Se añade sala de dos niveles configurable, estado Para servir, navegación responsive, Motion con movimiento reducido y conservación del borrador en memoria. 3 E2E de flujo completo pasan; no equivale a aceptación en dispositivos físicos.
+- **LOW / pendiente:** posiciones a escala/arrastre, bajas/reactivación de mesas y personalización del croquis. No inventar datos del establecimiento ni reservas. Migración 005 conserva mesas existentes en nivel 1; requiere revisión por administrador.
+
+No cambia el criterio: revisión independiente/CI/despliegue se verifican por separado; compilación no significa terminado.
+
 Fecha: 2026-10-07 (America/Guatemala). Responsable: Codex. Estado inicial verificado mediante Git, GitHub CLI y API GitHub.
 
 ## Evidencia inicial
@@ -16,18 +29,18 @@ Esta auditoría no atribuye vulnerabilidades a código inexistente ni certifica 
 
 ## Hallazgos y prioridades
 
-| ID | Severidad | Prioridad | Hallazgo / evidencia | Remediación y criterio |
-| --- | --- | --- | --- | --- |
-| A01 | CRITICAL | P0 | No existe aplicación ni persistencia verificable | Crear base reproducible; impedir uso productivo hasta validar flujo e integridad |
-| A02 | CRITICAL | P0 | No hay controles de concurrencia para stock/pagos/caja | PostgreSQL, constraints, bloqueos y pruebas concurrentes con DB real |
-| A03 | HIGH | P1 | Autenticación, sesiones, MFA y RBAC ausentes | Argon2id, cookies HttpOnly, rotación/revocación, TOTP y permisos en servidor |
-| A04 | HIGH | P1 | Validación, límites y protección web ausentes | Schemas estrictos, CORS/origin, headers, límites persistentes y errores seguros |
-| A05 | HIGH | P2 | Flujo POS, KDS y reconexión inexistentes | UI responsive, idempotencia y sincronización con recuperación de estado |
-| A06 | HIGH | P3 | No hay pruebas ni gates CI/CD | Unit/integration/E2E, typecheck/lint/build, dependencias, SAST y secretos |
-| A07 | HIGH | P3 | Render y datos reales desconocidos | Solicitar identificación; health/readiness, migraciones, backups y runbook |
-| A08 | MEDIUM | P3 | Auditoría y observabilidad ausentes | Bitácora transaccional, logs estructurados y request IDs sin secretos |
-| A09 | MEDIUM | P4 | Rendimiento y red sin mediciones | Carga de ensayo, Wi-Fi segmentado, indicadores offline y reintentos seguros |
-| A10 | LOW | P5 | No hay convenciones ni coordinación registrada | Documentación y ramas por bloque con revisión cruzada |
+| ID  | Severidad | Prioridad | Hallazgo / evidencia                                   | Remediación y criterio                                                           |
+| --- | --------- | --------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| A01 | CRITICAL  | P0        | No existe aplicación ni persistencia verificable       | Crear base reproducible; impedir uso productivo hasta validar flujo e integridad |
+| A02 | CRITICAL  | P0        | No hay controles de concurrencia para stock/pagos/caja | PostgreSQL, constraints, bloqueos y pruebas concurrentes con DB real             |
+| A03 | HIGH      | P1        | Autenticación, sesiones, MFA y RBAC ausentes           | Argon2id, cookies HttpOnly, rotación/revocación, TOTP y permisos en servidor     |
+| A04 | HIGH      | P1        | Validación, límites y protección web ausentes          | Schemas estrictos, CORS/origin, headers, límites persistentes y errores seguros  |
+| A05 | HIGH      | P2        | Flujo POS, KDS y reconexión inexistentes               | UI responsive, idempotencia y sincronización con recuperación de estado          |
+| A06 | HIGH      | P3        | No hay pruebas ni gates CI/CD                          | Unit/integration/E2E, typecheck/lint/build, dependencias, SAST y secretos        |
+| A07 | HIGH      | P3        | Render y datos reales desconocidos                     | Solicitar identificación; health/readiness, migraciones, backups y runbook       |
+| A08 | MEDIUM    | P3        | Auditoría y observabilidad ausentes                    | Bitácora transaccional, logs estructurados y request IDs sin secretos            |
+| A09 | MEDIUM    | P4        | Rendimiento y red sin mediciones                       | Carga de ensayo, Wi-Fi segmentado, indicadores offline y reintentos seguros      |
+| A10 | LOW       | P5        | No hay convenciones ni coordinación registrada         | Documentación y ramas por bloque con revisión cruzada                            |
 
 ## Decisiones iniciales propuestas para revisión cruzada
 
@@ -60,6 +73,7 @@ Resultado local actualizado: 74 pruebas unitarias/API/DB y 3 E2E (escritorio/tab
 Estado de hallazgos iniciales: A01–A06/A08/A10 tienen implementación y evidencia local, pero permanecen pendientes de revisión final/despliegue real. A07/A09 requieren acceso Render y mediciones/restauración/red del restaurante. No se declara producción lista.
 
 Pendientes relevantes: SMTP real y eliminar canal temporal en forgot-password (outbox), retención automática, editor de roles/permisos, gestión completa MFA en UI, ampliación de órdenes ya enviadas, comprobantes fiscales/impresoras, roles DB mínimos, backup/restauración, validación de proxy y jornada real. Más detalle en SECURITY.md y matriz de Claude.
+
 # Revalidación de CI y controles HTTP (2026-10-07)
 
 **HIGH / P1 — gate SAST incompleto (corregido en código, revalidación remota requerida):** la primera ejecución verde de Actions no equivalía a ausencia de hallazgos. CodeQL reportaba 22 alertas (21 rate limiting, 1 CSRF); el lector SARIF buscaba exclusivamente reglas en driver y omitía su severidad ubicada en extensions. Se corrige resolución de componentes/defaultConfiguration y comportamiento fail-closed; tres regresiones automatizadas cubren el defecto. No hay suppressions ni dismissals.

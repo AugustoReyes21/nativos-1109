@@ -54,3 +54,23 @@ Render conectado por login oficial del CLI. Se creó exclusivamente `nativos1109
 # Publicación de staging verificada — 2026-10-07
 
 Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 85 tests + 3 E2E, CodeQL y ZAP pasan. SMTP STARTTLS/2525 y autenticación comprobados; bootstrap ejecutado con contraseña aleatoria no expuesta y enlace de recuperación solicitado para el propietario. Login administrador exige MFA y no emite sesión antes del enrollment. Acceso externo de DB vuelve a estar cerrado. Recursos, IDs, procedimientos y vencimiento 2026-11-06 en DEPLOYMENT.md. Staging no equivale a aprobación de main ni producción. R2-02 (protección de rama), R2-03 (plan productivo), F11 (outbox/tiempo de respuesta) y demás pendientes permanecen abiertos.
+
+## 2026-10-07 — Sala Nativos: Codex + Claude
+
+Nuevo requisito del propietario: selección exclusiva aun sin orden. Codex implementa `server/table-claims.ts`, 007, integración de órdenes/estado y UI; Claude recibe contrato en issue #5 y revisión adversarial propuesta en `tests/security/table-claims-review.test.ts`, sin solapar archivos. Política/contratos/limitaciones en `docs/TABLE_CLAIMS.md`. Reserva de 5 minutos renovable en actividad, locks PostgreSQL, generación contra renew/release atrasados, idempotencia estable al volver a reservar. Revisión final y despliegue siguen pendientes; no declarar acuerdo de Claude donde solo existe solicitud enviada.
+
+Actualización final del bloque: PR #7 publicado en `codex/feature/two-level-floorplan`. 94/94 pruebas y 3/3 E2E en 5110761; CI de ese commit verde (Quality and security: 37656147398; ZAP: 37656147350). Último ajuste menor: filtro móvil sin texto recortado y capturas esperando opacidad final; lint/typecheck/build y 3/3 E2E reejecutados. Revisión final de Claude solicitada en PR #7, aún sin dictamen: no se fusiona ni despliega en Render por anticipado. Staging continúa con versión anterior. Croquis/cantidades pendientes del propietario.
+
+Coordinación real en issue #5: Claude aceptó revisar UX, accesibilidad y permisos sin editar frontend de Codex. Codex implementa `web/`, `server/pos.ts` (mesas y snapshot), 005/006, `tests/table-snapshot.test.ts` y `e2e/pos.spec.ts`. Claude mantiene `tests/security/floors.test.ts` y `docs/reviews/ui-floorplan-review.md` en su rama. #4 integrado localmente con merge limpio; no force push ni cambios directos a main.
+
+Decisiones D1/D2/D4/D5 de Claude adoptadas: estado global calculado en backend sin importes ajenos, Para servir, nivel en KDS/recibo y snapshot histórico inmutable. D3/D6 aplazados explícitamente: posiciones libres/desactivar mesas requieren siguiente entrega. Plano actual es cuadrícula operativa configurable; no se inventan datos reales. D7: Motion/reduced-motion, SVG nativo, fuentes del sistema, JS inicial120KB gzip y lista alternativa.
+
+93 tests + 3 E2E pasan localmente; lint/typecheck/build/audit también. Revisión visual de capturas reales desktop/mobile. Pendiente revisión independiente final, CI remoto y publicación del rediseño; no declarar desplegado antes de verificar Render. Brief: `docs/UI_DESIGN_BRIEF.md`. El administrador sigue necesitando configurar mesas por nivel; no se completó su MFA por él.
+
+
+
+## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)
+
+Rama `claude/review/pr2-round2` (PR #3 → rama de Codex). Por instrucción del propietario, Claude corrigió: R2-01 (topes de login antes de Argon2 + tope por cuenta con `TRUSTED_LOGIN_IPS`), R2-04 (integración = todo menos unitarias; gitleaks por digest; `forbidOnly`), R2-05 (migración 004 `paid_at` + índice parcial: 370 ms → 2 ms con 200k órdenes), R2-07 (ventana de refresh de 5 min), R2-08 (subclave HKDF), F07 (detalles de movimientos y creación de orden), F11 (envío SMTP sin esperar), F12 (prueba MFA con desafío real), F14 (retención horaria). R2-03: Render queda en free solo para pruebas; ver “Paso a producción” en DEPLOYMENT.md. `main` protegida por decisión del propietario.
+
+Codex: los archivos anunciados en el PR #2 quedan liberados al fusionar #3. Abiertos: R2-06 (cierre de órdenes entregadas sin pagar, requiere política), F16 (prueba SSE de jornada), F19, E2E faltantes.

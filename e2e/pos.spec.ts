@@ -55,6 +55,16 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     await page.getByRole("button", { name: "Crear categoría" }).click();
     await expect(page.getByLabel("Nueva categoría")).toHaveValue("");
     await page.getByLabel("Nueva mesa").fill("Mesa-" + tag);
+    const tableForm = page
+      .locator("form")
+      .filter({ has: page.getByLabel("Nueva mesa") });
+    await tableForm
+      .getByRole("combobox", { name: "Nivel de mesa", exact: true })
+      .selectOption("2");
+    await tableForm.getByLabel("Capacidad", { exact: true }).fill("6");
+    await tableForm
+      .getByRole("combobox", { name: "Forma", exact: true })
+      .selectOption("round");
     await page.getByRole("button", { name: "Crear mesa" }).click();
     await expect(page.getByLabel("Nueva mesa")).toHaveValue("");
     await page.getByLabel("Nombre del producto").fill("Almuerzo-" + tag);
@@ -81,15 +91,45 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     await page.getByRole("button", { name: "Salir", exact: true }).click();
     await expect(page.getByLabel("Correo", { exact: true })).toBeVisible();
     await login(page, emails.MESERO!);
+    await expect(
+      page.getByRole("heading", { name: "El salón, a tu ritmo." }),
+    ).toBeVisible();
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await page
-      .getByRole("button", { name: "Nueva orden", exact: true })
+      .getByRole("button", { name: "Nivel 2 Segundo nivel", exact: true })
       .click();
+    const visualTable = page.getByRole("button", {
+      name: new RegExp(`Mesa-${tag}, nivel 2, Disponible`),
+    });
+    await expect(visualTable).toContainText("6 personas");
+    await expect(visualTable).toBeEnabled();
+    await expect(page.locator(".table-plan")).toHaveCSS("opacity", "1");
+    await page.screenshot({
+      path: "test-results/floor-" + info.project.name + ".png",
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await visualTable.focus();
+    await page.keyboard.press("Enter");
     await page
       .getByRole("button", { name: new RegExp("Almuerzo-" + tag) })
       .click();
+    await expect(
+      page
+        .getByRole("combobox", { name: "Mesa", exact: true })
+        .locator("option:checked"),
+    ).toHaveText(`Mesa-${tag} · Nivel 2`);
     await page
-      .getByRole("combobox", { name: "Mesa", exact: true })
-      .selectOption({ label: "Mesa-" + tag });
+      .getByRole("button", { name: "Salón y mesas", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Nueva orden", exact: true })
+      .click();
+    await expect(page.getByLabel("Cantidad", { exact: true })).toHaveValue("1");
     await page.getByLabel("Observaciones", { exact: true }).fill("Sin cebolla");
     let responseLost = false;
     await page.route("**/api/orders", async (route) => {
@@ -111,6 +151,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       .locator("article")
       .filter({ hasText: "Almuerzo-" + tag });
     await expect(ticket).toContainText("Sin cebolla");
+    await expect(ticket).toContainText("Nivel 2");
     await ticket.getByRole("button", { name: "Preparar", exact: true }).click();
     await expect(ticket).toContainText("EN PREPARACION");
     await ticket.getByRole("button", { name: "Marcar listo" }).click();
@@ -118,6 +159,21 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       .locator("article")
       .filter({ hasText: "Almuerzo-" + tag });
     await expect(waiterTicket).toContainText("LISTO");
+    await page
+      .getByRole("button", { name: "Salón y mesas", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: new RegExp(`Mesa-${tag}, nivel 2, Para servir`),
+      }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Lista", exact: true }).click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "Órdenes", exact: true }).click();
     await page.context().setOffline(true);
     await expect(
       page.getByText("● Reconectando · espera para operar"),
@@ -156,6 +212,9 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       .getByRole("button", { name: "Confirmar cobro" })
       .click();
     await expect(page.getByRole("dialog")).toContainText("Cambio Q");
+    await expect(page.getByRole("dialog")).toContainText(
+      `Mesa-${tag} · Nivel 2`,
+    );
     await page.getByRole("button", { name: "Cerrar", exact: true }).click();
     await expect(cashierTicket).toContainText("Pagada");
     await page.getByRole("button", { name: "Caja", exact: true }).click();

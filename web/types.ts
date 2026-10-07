@@ -17,10 +17,17 @@ export type Product = {
   active: boolean;
 };
 export type Named = { id: string; name: string };
+export type DiningTable = Named & {
+  floor: 1 | 2;
+  capacity: number;
+  shape: "square" | "round" | "rectangle";
+  display_order: number;
+  version: number;
+};
 export type Catalog = {
   products: Product[];
   categories: Named[];
-  tables: Named[];
+  tables: DiningTable[];
 };
 export type Item = {
   product_id: string;
@@ -33,6 +40,8 @@ export type Order = {
   id: string;
   number: string;
   table_name: string;
+  table_id: string;
+  table_floor: 1 | 2;
   status: string;
   total_cents: number;
   version: number;
