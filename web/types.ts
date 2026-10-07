@@ -41,6 +41,7 @@ export type Order = {
   number: string;
   table_name: string;
   table_id: string;
+  table_floor: 1 | 2;
   status: string;
   total_cents: number;
   version: number;

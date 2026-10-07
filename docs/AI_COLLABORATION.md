@@ -55,6 +55,14 @@ Render conectado por login oficial del CLI. Se creó exclusivamente `nativos1109
 
 Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 85 tests + 3 E2E, CodeQL y ZAP pasan. SMTP STARTTLS/2525 y autenticación comprobados; bootstrap ejecutado con contraseña aleatoria no expuesta y enlace de recuperación solicitado para el propietario. Login administrador exige MFA y no emite sesión antes del enrollment. Acceso externo de DB vuelve a estar cerrado. Recursos, IDs, procedimientos y vencimiento 2026-11-06 en DEPLOYMENT.md. Staging no equivale a aprobación de main ni producción. R2-02 (protección de rama), R2-03 (plan productivo), F11 (outbox/tiempo de respuesta) y demás pendientes permanecen abiertos.
 
+## 2026-10-07 — Sala Nativos: Codex + Claude
+
+Coordinación real en issue #5: Claude aceptó revisar UX, accesibilidad y permisos sin editar frontend de Codex. Codex implementa `web/`, `server/pos.ts` (mesas y snapshot), 005/006, `tests/table-snapshot.test.ts` y `e2e/pos.spec.ts`. Claude mantiene `tests/security/floors.test.ts` y `docs/reviews/ui-floorplan-review.md` en su rama. #4 integrado localmente con merge limpio; no force push ni cambios directos a main.
+
+Decisiones D1/D2/D4/D5 de Claude adoptadas: estado global calculado en backend sin importes ajenos, Para servir, nivel en KDS/recibo y snapshot histórico inmutable. D3/D6 aplazados explícitamente: posiciones libres/desactivar mesas requieren siguiente entrega. Plano actual es cuadrícula operativa configurable; no se inventan datos reales. D7: Motion/reduced-motion, SVG nativo, fuentes del sistema, JS inicial120KB gzip y lista alternativa.
+
+93 tests + 3 E2E pasan localmente; lint/typecheck/build/audit también. Revisión visual de capturas reales desktop/mobile. Pendiente revisión independiente final, CI remoto y publicación del rediseño; no declarar desplegado antes de verificar Render. Brief: `docs/UI_DESIGN_BRIEF.md`. El administrador sigue necesitando configurar mesas por nivel; no se completó su MFA por él.
+
 
 
 ## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)

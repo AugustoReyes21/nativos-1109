@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, ApiError } from "./api";
 import { Auth } from "./Auth";
-import { NewOrder } from "./NewOrder";
+import { NewOrder, emptyDraft } from "./NewOrder";
+import { FloorPlan } from "./FloorPlan";
+import { Icon, type IconName } from "./Icon";
+import type { TableStatus } from "./table-state";
+import { MotionConfig } from "motion/react";
 import { Orders } from "./Orders";
 import { AdminView, CashView, CatalogView } from "./Management";
 import {
@@ -13,6 +17,7 @@ import {
   type User,
 } from "./types";
 import "./style.css";
+import "./experience.css";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -28,6 +33,10 @@ function App() {
     tables: [],
   });
   const [orders, setOrders] = useState<Order[]>([]);
+  const [tableStatuses, setTableStatuses] = useState<TableStatus[]>([]);
+  const [floor, setFloor] = useState<1 | 2>(1);
+  const [draft, setDraft] = useState(emptyDraft);
+  const [orderTable, setOrderTable] = useState<string | null>(null);
   const [cash, setCash] = useState<Shift[]>([]);
   const [view, setView] = useState("ordenes");
   const [resetToken] = useState(() =>
@@ -108,7 +117,10 @@ function App() {
     }
   };
   const load = useCallback(async (u: User) => {
-    const tasks: Promise<void>[] = [api<Order[]>("/orders").then(setOrders)];
+    const tasks: Promise<void>[] = [
+      api<Order[]>("/orders").then(setOrders),
+      api<TableStatus[]>("/tables/status").then(setTableStatuses),
+    ];
     if (u.permissions.includes("products.read"))
       tasks.push(api<Catalog>("/catalog").then(setCatalog));
     if (u.permissions.includes("cash.read"))
@@ -118,7 +130,9 @@ function App() {
   const enter = async () => {
     const me = await api<User>("/auth/me");
     setUser(me);
-    setView("ordenes");
+    setView(me.permissions.includes("orders.create") ? "salon" : "ordenes");
+    setDraft(emptyDraft());
+    setOrderTable(null);
     await load(me);
   };
   const reload = async () => {
@@ -133,6 +147,7 @@ function App() {
     void api<User>("/auth/me")
       .then(async (u) => {
         setUser(u);
+        setView(u.permissions.includes("orders.create") ? "salon" : "ordenes");
         await load(u);
       })
       .catch((e) => {
@@ -208,6 +223,27 @@ function App() {
       window.removeEventListener("online", online);
     };
   }, [user, load]);
+  useEffect(() => {
+    if (!draft.items.length) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [draft.items.length]);
+  const changeTable = (id: string) => {
+    if (
+      id !== draft.tableId &&
+      draft.items.length &&
+      !window.confirm(
+        "Hay productos en el borrador. ¿Mover este pedido a la mesa seleccionada?",
+      )
+    )
+      return false;
+    setDraft((old) => ({ ...old, tableId: id }));
+    return true;
+  };
   const feedback = error && (
     <div role="alert" className="alert">
       {error}
@@ -228,21 +264,31 @@ function App() {
         </div>
       </main>
     );
-  const tab = (id: string, label: string, visible = true) =>
+  const tab = (id: IconName, label: string, visible = true) =>
     visible && (
       <button
         className={view === id ? "selected" : ""}
+        aria-current={view === id ? "page" : undefined}
         onClick={() => {
           setView(id);
+          if (id === "ordenes") setOrderTable(null);
           setError("");
         }}
       >
-        {label}
+        <Icon name={id} />
+        <span>{label}</span>
+        {id === "nueva" && !!draft.items.length && (
+          <span
+            className="draft-dot"
+            aria-hidden="true"
+            title="Borrador pendiente"
+          />
+        )}
       </button>
     );
   return (
     <div className="shell">
-      <header>
+      <header className="app-header">
         <div className="logo">
           <span className="brand-mark small">N</span>
           <div>
@@ -265,6 +311,7 @@ function App() {
             void run(async () => {
               await api("/auth/logout", "POST", {});
               setUser(null);
+              setDraft(emptyDraft());
               attempts.current.clear();
             })
           }
@@ -273,6 +320,8 @@ function App() {
         </button>
       </header>
       <nav aria-label="Navegación principal">
+        <p className="nav-caption">TU RESTAURANTE</p>
+        {tab("salon", "Salón y mesas", can("products.read"))}
         {tab(
           "ordenes",
           can("kitchen.update") && !can("products.write")
@@ -284,12 +333,57 @@ function App() {
         {tab("caja", "Caja", can("cash.read"))}
         {tab("admin", "Administración", can("users.manage"))}
         {tab("seguridad", "Mi seguridad")}
+        <div className="nav-signature">
+          <span>N / 1109</span>
+          <small>
+            Buena mesa.
+            <br />
+            Gran experiencia.
+          </small>
+        </div>
       </nav>
       <main className="content">
         {feedback}
+        {view === "salon" && (
+          <FloorPlan
+            tables={catalog.tables}
+            statuses={tableStatuses}
+            floor={floor}
+            setFloor={setFloor}
+            canCreate={can("orders.create")}
+            busy={busy}
+            connected={connected}
+            configure={
+              can("settings.manage") ? () => setView("catalogo") : undefined
+            }
+            select={(table) => {
+              if (can("orders.create")) {
+                if (changeTable(table.id)) setView("nueva");
+              } else {
+                setOrderTable(table.id);
+                setView("ordenes");
+              }
+            }}
+          />
+        )}
+        {view === "ordenes" && orderTable && (
+          <div className="table-context">
+            <span>
+              Órdenes visibles de{" "}
+              {catalog.tables.find((t) => t.id === orderTable)?.name}
+            </span>
+            <button className="secondary" onClick={() => setOrderTable(null)}>
+              Ver todas las órdenes
+            </button>
+          </div>
+        )}
         {view === "ordenes" && (
           <Orders
-            orders={orders}
+            orders={
+              orderTable
+                ? orders.filter((o) => o.table_id === orderTable)
+                : orders
+            }
             can={can}
             busy={busy}
             connected={connected}
@@ -302,12 +396,22 @@ function App() {
         {view === "nueva" && (
           <NewOrder
             catalog={catalog}
+            draft={draft}
+            setDraft={setDraft}
+            changeTable={changeTable}
+            status={tableStatuses.find((s) => s.tableId === draft.tableId)}
+            back={() => setView("salon")}
+            viewOrders={() => {
+              setOrderTable(draft.tableId);
+              setView("ordenes");
+            }}
             busy={busy}
             connected={connected}
             run={run}
             mutate={mutate}
             done={async () => {
               setView("ordenes");
+              setOrderTable(null);
               await reload();
             }}
           />
@@ -347,6 +451,7 @@ function App() {
                 void run(async () => {
                   await api("/auth/logout-all", "POST", {});
                   setUser(null);
+                  setDraft(emptyDraft());
                 })
               }
             >
@@ -358,4 +463,8 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <MotionConfig reducedMotion="user">
+    <App />
+  </MotionConfig>,
+);

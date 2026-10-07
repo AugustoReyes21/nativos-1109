@@ -1,6 +1,64 @@
 import { useState, type FormEvent } from "react";
 import { api, money, toCents } from "./api";
-import type { Action, Catalog, Mutate, Shift, User } from "./types";
+import type {
+  Action,
+  Catalog,
+  DiningTable,
+  Mutate,
+  Shift,
+  User,
+} from "./types";
+import { TableDrawing } from "./FloorPlan";
+function TableFields({ table }: { table?: DiningTable }) {
+  return (
+    <div className="table-form-fields">
+      <label>
+        Nivel de mesa
+        <select name="floor" defaultValue={table?.floor ?? 1}>
+          <option value="1">Nivel 1 · Planta baja</option>
+          <option value="2">Nivel 2 · Segundo nivel</option>
+        </select>
+      </label>
+      <label>
+        Capacidad
+        <input
+          name="capacity"
+          type="number"
+          min="1"
+          max="12"
+          defaultValue={table?.capacity ?? 4}
+          required
+        />
+      </label>
+      <label>
+        Forma
+        <select name="shape" defaultValue={table?.shape ?? "square"}>
+          <option value="square">Cuadrada</option>
+          <option value="round">Redonda</option>
+          <option value="rectangle">Rectangular</option>
+        </select>
+      </label>
+      <label>
+        Orden visual
+        <input
+          name="displayOrder"
+          type="number"
+          min="0"
+          max="999"
+          defaultValue={table?.display_order ?? 0}
+          required
+        />
+      </label>
+    </div>
+  );
+}
+const tableInput = (f: FormData) => ({
+  name: f.get("name"),
+  floor: Number(f.get("floor")),
+  capacity: Number(f.get("capacity")),
+  shape: f.get("shape"),
+  displayOrder: Number(f.get("displayOrder")),
+});
 type Props = {
   catalog: Catalog;
   busy: boolean;
@@ -99,7 +157,7 @@ export function CatalogView({ catalog, busy, run, mutate, reload }: Props) {
           <form
             onSubmit={(e) =>
               formAction(e, run, reload, async (f) => {
-                await mutate("/tables", { name: f.get("name") });
+                await mutate("/tables", tableInput(f));
               })
             }
           >
@@ -107,6 +165,8 @@ export function CatalogView({ catalog, busy, run, mutate, reload }: Props) {
               Nueva mesa
               <input name="name" maxLength={100} required />
             </label>
+            <TableFields />
+            <small>Usa un nombre único entre ambos niveles.</small>
             <button disabled={busy}>Crear mesa</button>
           </form>
           <p>
@@ -114,6 +174,56 @@ export function CatalogView({ catalog, busy, run, mutate, reload }: Props) {
               "Sin mesas configuradas"}
           </p>
         </section>
+      </div>
+      <h2>Las mesas de tu restaurante</h2>
+      <p className="page-description">
+        Configura ambos niveles. El orden visual organiza cada salón de menor a
+        mayor.
+      </p>
+      <div className="table-settings-grid">
+        {catalog.tables.map((t) => (
+          <details
+            className="panel table-settings"
+            key={`${t.id}:${t.version}`}
+          >
+            <summary>
+              <TableDrawing table={t} />
+              <span>
+                {t.name}
+                <small>
+                  Nivel {t.floor} · {t.capacity} personas
+                </small>
+              </span>
+              <span className="edit-hint">Editar</span>
+            </summary>
+            <form
+              onSubmit={(e) =>
+                formAction(e, run, reload, async (f) => {
+                  await mutate(
+                    `/tables/${t.id}`,
+                    { ...tableInput(f), version: t.version },
+                    "PATCH",
+                  );
+                })
+              }
+            >
+              <label>
+                Nombre de mesa
+                <input
+                  name="name"
+                  maxLength={100}
+                  defaultValue={t.name}
+                  required
+                />
+              </label>
+              <TableFields table={t} />
+              <small>
+                Los pedidos ya creados conservan su nombre y nivel originales.
+              </small>
+              <button disabled={busy}>Guardar mesa</button>
+            </form>
+          </details>
+        ))}
       </div>
       <h2>Disponibilidad diaria y precios</h2>
       <div className="product-grid">
