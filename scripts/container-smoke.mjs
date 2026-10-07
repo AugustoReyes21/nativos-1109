@@ -13,10 +13,10 @@ await new Promise(resolve => server.once('listening', resolve));
 try {
   const address = server.address();
   const origin = 'http://127.0.0.1:' + address.port;
-  const health = await fetch(origin + '/health/ready'); assert.equal(health.status, 200);
+  const health = await globalThis.fetch(origin + '/health/ready'); assert.equal(health.status, 200);
   assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
   assert.ok(health.headers.get('strict-transport-security'));
-  assert.equal((await fetch(origin)).status, 200);
+  assert.equal((await globalThis.fetch(origin)).status, 200);
   const password = randomBytes(24).toString('hex');
   assert.equal(await passwordVerify(await passwordHash(password), password), true);
   console.log('Linux production-mode smoke passed: readiness, static UI, HSTS and native Argon2id.');

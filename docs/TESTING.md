@@ -48,3 +48,5 @@ ZAP final: 6 URLs no autenticadas, 65 reglas PASS, 0 FAIL y dos grupos WARN info
 CI/SAST están definidos y publicados, pero GitHub reporta 0 runs/checks a esta revisión; ejecución remota no verificada. La carga registrada arriba precede a los triggers de Claude; debe repetirse para medir el efecto del endurecimiento.
 
 Repetición final con migraciones 001+002+003: 396 recorridos, 2777 requests, 2772 checks correctos, 0 errores; p95 13.32 ms, media 7.61 ms, máximo 162.89 ms. Misma carga 5 VU/20 s. Docker build en Linux completado con instalación limpia, compilación y eliminación de dependencias de desarrollo.
+
+Smoke del contenedor Linux en NODE_ENV=production: readiness 200, UI estática 200, HSTS presente y hash/verificación Argon2id nativo correctos. No equivale a despliegue Render.
