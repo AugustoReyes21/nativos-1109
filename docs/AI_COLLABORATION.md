@@ -51,6 +51,10 @@ CI remoto ya funciona. La primera ejecución verde omitió severidades de reglas
 Se integró `claude/review/pr2-round2` mediante merge, sin fusionar main ni cerrar PR #3. R2-01 corregido: límites de IP/cuenta global evaluados antes de Argon2 y antes de emitir sesión; fallos incrementan atómicamente las tres dimensiones. La prueba distribuida ahora exige 401 para los primeros 30 fallos y 429 para los restantes, preservando que la contraseña correcta desde una séptima IP también sea bloqueada. No se añadió excepción de IP confiable sin una política explícita. 85 tests y 3 E2E pasan localmente. CI ejecuta todas las suites con `npm test`, sin listas incompletas; `forbidOnly` aportado por Claude se conserva.
 
 Render conectado por login oficial del CLI. Se creó exclusivamente `nativos1109-db`, PostgreSQL 17 free/Oregon, disponible y con vencimiento 2026-11-06. Staging, no producción; no se alteraron otras aplicaciones. Publicación web en curso, sujeta a checks del commit. Secretos únicamente en variables de Render, nunca en documentos/commits.
+# Publicación de staging verificada — 2026-10-07
+
+Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 85 tests + 3 E2E, CodeQL y ZAP pasan. SMTP STARTTLS/2525 y autenticación comprobados; bootstrap ejecutado con contraseña aleatoria no expuesta y enlace de recuperación solicitado para el propietario. Login administrador exige MFA y no emite sesión antes del enrollment. Acceso externo de DB vuelve a estar cerrado. Recursos, IDs, procedimientos y vencimiento 2026-11-06 en DEPLOYMENT.md. Staging no equivale a aprobación de main ni producción. R2-02 (protección de rama), R2-03 (plan productivo), F11 (outbox/tiempo de respuesta) y demás pendientes permanecen abiertos.
+
 
 
 ## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)

@@ -2,6 +2,7 @@
 # - the free Postgres EXPIRES 30 DAYS after creation and has NO backups;
 # - the free web service sleeps after 15 min without traffic (~1 min to wake).
 # Before real use, follow "Paso a producción" in docs/DEPLOYMENT.md.
+# Staging only. Current deployment and expiry are recorded in docs/DEPLOYMENT.md.
 services:
   - type: web
     name: nativos1109
@@ -13,6 +14,9 @@ services:
     startCommand: node dist/server/migrate.js && node dist/server/main.js
     healthCheckPath: /health/ready
     autoDeployTrigger: checksPass
+    buildFilter:
+      ignoredPaths:
+        - docs/**
     envVars:
       - key: NODE_ENV
         value: production

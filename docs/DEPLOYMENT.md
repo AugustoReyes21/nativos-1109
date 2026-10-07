@@ -2,7 +2,16 @@
 
 ## Estado
 
-El usuario confirmó que se debe publicar en Render. Se encontró integración disponible y se solicitó conectarla. Sin conexión confirmada no se han creado recursos ni existe URL publicada verificable. `render.yaml` describe un entorno inicial de ensayo gratuito, no producción comercial.
+Publicado el 2026-10-07 mediante CLI oficial autorizado por el propietario: **https://nativos1109.onrender.com**. Entorno gratuito de ensayo, **no producción comercial**. No se modificaron otros servicios de la cuenta.
+
+- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama `codex/feature/secure-pos-foundation`.
+- PostgreSQL 17 `dpg-db36u0rncjis73elmaq0-a`, Oregon/free; **vence el 2026-11-06**. No guardar ventas reales aquí. Cambiar a infraestructura persistente con backups antes de operación comercial.
+- Primer deploy `dep-db3741cs728c73biiqg0`, commit `169d9d3`, después de verify/sast/baseline exitosos. CI: runs 37651290538 y 37651290459.
+- Verificados remotamente `/`, `/health/live`, `/health/ready`: 200; HTTPS/HSTS presentes. Migraciones se ejecutaron al arrancar. No se modificó el esquema manualmente.
+- SMTP Brevo con STARTTLS obligatorio en 2525, autenticación comprobada. MAIL_FROM/SMTP_USER/SMTP_PASSWORD están en variables Render, no en Git. La clave compartida en chat debe rotarse desde Brevo y actualizarse directamente en Render.
+- Administrador inicial creado con `server/bootstrap.ts` compilado y contraseña aleatoria solo en memoria; no existe contraseña predeterminada publicada. Se solicitó el correo para elegir contraseña y se comprobó ausencia de RESET_DELIVERY_FAILURE. Aceptación SMTP no prueba entrega en inbox. La persona completa MFA; login previo a enrollment no emitió sesión POS.
+- Bootstrap usó acceso PostgreSQL externo temporal restringido a una única IP /32 y TLS verificado. Al terminar se restauró `ipAllowList: []`; no quedan variables BOOTSTRAP ni acceso externo abierto.
+- Auto-deploy exige checksPass. Cambios exclusivamente en docs/** no redepliegan. PR #2 permanece borrador; publicación de staging no equivale a aprobación de producción.
 
 ## Render
 
@@ -19,10 +28,10 @@ La rama inicial del servicio es codex/feature/secure-pos-foundation para ensayo.
 ## Health y errores de despliegue
 
 - `/health/live`: proceso HTTP responde.
-- `/health/ready` y `/health`: conexión DB y migración base presentes; devuelven 503 si no puede operar, sin detalles internos.
+- `/health/ready` y `/health`: conexión DB y todas las migraciones requeridas presentes; devuelven 503 si no puede operar, sin detalles internos.
 - Configuración inválida impide arranque y solo menciona nombres de variables.
 - Correlacionar 500 por X-Request-ID y bitácora; nunca copiar secretos o SQL a tickets públicos.
-- 502/503: revisar último deploy, proceso escuchando PORT/0.0.0.0, variables, migraciones, conectividad DB y límites de conexiones. No se ha observado un incidente real Render porque el servicio todavía no está identificado/conectado.
+- 502/503: revisar último deploy, proceso escuchando PORT/0.0.0.0, variables, migraciones, conectividad DB y límites de conexiones. La comprobación inicial del servicio desplegado respondió correctamente; esto no prueba disponibilidad sostenida.
 - SIGTERM/SIGINT cierran streams y servidor, drenan conexiones y terminan antes de 10 segundos.
 
 ## Plan actual: pruebas en Render free
