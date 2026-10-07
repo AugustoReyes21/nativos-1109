@@ -36,8 +36,7 @@ jobs:
       - run: npm run scan:secrets
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:unit
-      - run: npm run test:integration
+      - run: npm test
       - run: npm run build
       - run: npm audit --audit-level=moderate
       - name: Scan complete Git history

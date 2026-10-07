@@ -188,7 +188,10 @@ describe('authentication and MFA', () => {
         .set('X-CSRF-Token', csrf.body.token as string).send({ email: 'cashier@example.test', password: guess });
     };
     try {
-      for (let ip = 1; ip <= 6; ip++) for (let n = 0; n < 9; n++) expect((await attempt(`203.0.113.${ip}`, `Guess-${ip}-${n}-password`)).status).toBe(401);
+      for (let ip = 1; ip <= 6; ip++) for (let n = 0; n < 9; n++) {
+        const attemptIndex = (ip - 1) * 9 + n;
+        expect((await attempt(`203.0.113.${ip}`, `Guess-${ip}-${n}-password`)).status).toBe(attemptIndex < 30 ? 401 : 429);
+      }
       // 54 wrong guesses within minutes from 6 addresses: a 7th address must not get a fresh budget.
       expect((await attempt('203.0.113.99', password)).status).toBe(429);
     } finally { server.app.set('trust proxy', false); }

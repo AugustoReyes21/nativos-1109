@@ -193,12 +193,32 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         .strict()
         .parse(req.body);
       const failureKey = "login-failure:" + digest(input.email + ":" + req.ip);
-      const failures = await db.query<{ hits: number }>(
-        "SELECT hits FROM rate_limits WHERE key=$1 AND expires_at>now()",
-        [failureKey],
-      );
-      if ((failures.rows[0]?.hits ?? 0) >= 10)
-        fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
+      const failureKeys = [
+        failureKey,
+        "login-failed-ip:" + digest(req.ip ?? "unknown"),
+        "login-failed-account:" + digest(input.email),
+      ];
+      const checkFailures = async () => {
+        const failures = await db.query<{ blocked: boolean }>(
+          `SELECT EXISTS(SELECT 1 FROM rate_limits WHERE expires_at>now() AND
+          ((key=$1 AND hits>=10) OR (key=$2 AND hits>=100) OR (key=$3 AND hits>=30))) AS blocked`,
+          failureKeys,
+        );
+        if (failures.rows[0]?.blocked) {
+          await audit(
+            db,
+            req,
+            "LOGIN_THROTTLED",
+            "auth",
+            undefined,
+            "FAILURE",
+            undefined,
+            { accountHash: digest(input.email) },
+          );
+          fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
+        }
+      };
+      await checkFailures();
       const { rows } = await db.query<User>(
         "SELECT * FROM users WHERE email=$1",
         [input.email],
@@ -210,11 +230,19 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         input.password,
       );
       if (!valid || !u?.active) {
-        await limit(req, "login-failure", 10, 900, input.email + ":" + req.ip);
-        await limit(req, "login-failed-ip", 100, 900);
+        // Record every dimension atomically: hitting one cap cannot skip the others.
+        await db.query(
+          `INSERT INTO rate_limits(key,hits,expires_at)
+          SELECT key,1,now()+seconds*interval '1 second' FROM unnest($1::text[],$2::int[]) AS v(key,seconds)
+          ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN rate_limits.expires_at<now() THEN 1 ELSE rate_limits.hits+1 END,
+          expires_at=CASE WHEN rate_limits.expires_at<now() THEN EXCLUDED.expires_at ELSE rate_limits.expires_at END`,
+          [failureKeys, [900, 900, 3600]],
+        );
         await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE");
         return fail(401, "INVALID_CREDENTIALS", "Credenciales inválidas");
       }
+      // Another concurrent request may have exhausted a budget during Argon2.
+      await checkFailures();
       await db.query("DELETE FROM rate_limits WHERE key=$1", [failureKey]);
       if (u.mfa_enabled || u.role === "ADMINISTRADOR") {
         const token = randomToken();
