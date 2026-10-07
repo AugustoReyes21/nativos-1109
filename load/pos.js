@@ -62,14 +62,19 @@ export function setup() {
     kitchen = login("cocina"),
     cashier = login("cajero");
   const catalog = http.get(base + "/api/catalog", params(waiter)).json();
+  // The imported restaurant menu intentionally starts at stock 0.
+  // Use only the dedicated load fixture, never the first catalog entry.
+  const product = catalog.products.find((p) => p.name === "Producto de prueba");
+  const table = catalog.tables.find((t) => t.name === "Mesa carga");
+  if (!product || !table) throw new Error("Isolated load fixtures missing");
   if (send("/cash/open", { openingCents: 0 }, cashier).status !== 201)
     throw new Error("Cash fixture failed");
   return {
     waiter,
     kitchen,
     cashier,
-    productId: catalog.products[0].id,
-    tableId: catalog.tables[0].id,
+    productId: product.id,
+    tableId: table.id,
   };
 }
 export default function (data) {

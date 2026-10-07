@@ -33,7 +33,7 @@ Migración `010_checkout_control.sql`; endpoints en `server/checkout.ts` y cobro
 
 No hay PAN/CVV, credenciales FEL ni datos tributarios del emisor en Git. El log de impresión registra IDs/actor, no NIT/CUI ni cuerpo del documento. Un pedido API `documentKind: FACTURA` devuelve `FEL_NOT_CONFIGURED` antes de guardar cobro; `/api/fel/status` no declara emisor listo. El comprobante dice **No es factura fiscal**.
 
-Pendientes: conector FEL real y pruebas de certificación/contingencia; reversos controlados de gastos/mermas y devoluciones; costos/impuestos/contabilidad; búsqueda avanzada del historial y retención de PII acordada; validación con impresora física, navegador Safari real, carga actualizada y dictamen independiente. La carga k6 previa no corresponde al nuevo flujo; se actualizó su escenario, no se afirma un resultado nuevo.
+Pendientes: conector FEL real y pruebas de certificación/contingencia; reversos controlados de gastos/mermas y devoluciones; costos/impuestos/contabilidad; búsqueda avanzada del historial y retención de PII acordada; validación con impresora física, navegador Safari real, carga de jornada/múltiples sesiones independientes y dictamen independiente. Se repitió carga corta k6 del flujo actualizado; resultados y límites en TESTING.md.
 
 ## Despliegue
 
