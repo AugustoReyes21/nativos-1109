@@ -4,11 +4,12 @@
 
 Publicado el 2026-10-07 mediante CLI oficial autorizado por el propietario: **https://nativos1109.onrender.com**. Entorno gratuito de ensayo, **no producción comercial**. No se modificaron otros servicios de la cuenta.
 
-- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama actual `codex/feature/immersive-floor-motion`.
+- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama actual `codex/feature/cashier-fel-workflow`.
 - PostgreSQL 17 `dpg-db36u0rncjis73elmaq0-a`, Oregon/free; **vence el 2026-11-06**. No guardar ventas reales aquí. Cambiar a infraestructura persistente con backups antes de operación comercial.
 - Primer deploy `dep-db3741cs728c73biiqg0`, commit `169d9d3`, después de verify/sast/baseline exitosos. CI: runs 37651290538 y 37651290459.
 - Actualización anterior (menú/cortesías): `dep-db38sm4s728c73bnk5lg`, commit `b43bf89b8361d78dcdaf81047ed4f104c66259f0`. CI aprobado: Quality/security 37666025025 y 37666034735; ZAP 37666034730. Incluye interfaz de dos niveles, reservas exclusivas, menú y cortesías.
 - Actualización visual publicada: `dep-db39aqt9fdbs73ad9pu0`, commit `75378577609ff3b4ded9ffce184c281db832ad5a`, estado Render `live`. Quality/security 37669645780 y 37669652240, ZAP 37669652138 aprobados antes del despliegue. PR #10 pendiente de revisión independiente, sin merge a main.
+- **Versión actual caja/historial:** `dep-db3a0jvlk1mc739u4qkg`, commit `94690501ebc40c3c52db7599d379ce08465d3938`, Render `live`. Quality/security 37675525930 y 37675532151, ZAP37675532175 exitosos antes de desplegar. PR #11 borrador, revisión independiente pendiente. FEL **no habilitado**.
 - Verificados remotamente `/`, `/health/live`, `/health/ready`: 200; HTTPS/HSTS presentes. Migraciones se ejecutaron al arrancar. No se modificó el esquema manualmente.
 - SMTP Brevo con STARTTLS obligatorio en 2525, autenticación comprobada. MAIL_FROM/SMTP_USER/SMTP_PASSWORD están en variables Render, no en Git. La clave compartida en chat debe rotarse desde Brevo y actualizarse directamente en Render.
 - Administrador inicial creado con `server/bootstrap.ts` compilado y contraseña aleatoria solo en memoria; no existe contraseña predeterminada publicada. Se solicitó el correo para elegir contraseña y se comprobó ausencia de RESET_DELIVERY_FAILURE. Aceptación SMTP no prueba entrega en inbox. La persona completa MFA; login previo a enrollment no emitió sesión POS.
@@ -82,3 +83,9 @@ Blueprint apunta a `codex/feature/cashier-fel-workflow` para la actualización a
 No volver al backend anterior tras010: sus operaciones de caja incumplen guardas nuevas. Aplicar correcciones hacia adelante. Durante despliegue no realizar operaciones monetarias: la instancia anterior puede rechazarlas mientras se reemplaza. No editar checksums/migraciones publicadas ni modificar producción manualmente.
 
 FEL no habilitado y sin claves configuradas: solo comprobantes internos. No utilizar staging free para ventas reales, documentos tributarios ni registros que requieran conservación. Plan productivo con backups y restauración probada sigue pendiente; vencimiento PostgreSQL2026-11-06.
+
+### Publicación caja010 verificada
+
+Commit/deploy actual indicado arriba, después de gates verdes. `/health`, `/health/live`, `/health/ready` 200 con HSTS; migrador ejecutado al iniciar, readiness exige las migraciones versionadas incluidas en la nueva aplicación. Bundle JS `index-CDo81pLz.js` y CSS `index-CgmnkEep.css` remotos tienen el mismo SHA256 que la compilación validada localmente.
+
+Navegador remoto desktop/mobile: login visible, 0 errores JavaScript/recursos y sin overflow. `/api/sales`, `/api/fel/status`, `/api/finance/summary` rechazan acceso anónimo con401. Flujos autenticados probados con15 E2E en DB aislada, no con sesión del propietario. No se abrieron conexiones DB externas ni se ejecutaron ventas/pruebas de carga sobre Render; no se alteraron cuentas, stock, secretos ni plan. Solo el migrador versionado modificó esquema/permisos. Revisión de Claude solicitada en issue #5 y PR #11, sin dictamen nuevo aún. El comprobante publicado sigue siendo interno: no es factura FEL.
