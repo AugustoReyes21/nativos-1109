@@ -122,6 +122,35 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       ).rows[0],
     ),
   );
+  app.get("/api/tables/status", p("orders.read"), async (req, res) => {
+    const me = identity(req);
+    const result = await db.query(
+      `WITH active AS (
+      SELECT id,table_id,user_id,status,paid_at,total_cents,created_at FROM orders
+      WHERE status IN ('PENDIENTE','EN_PREPARACION','LISTO')
+      UNION ALL
+      SELECT id,table_id,user_id,status,paid_at,total_cents,created_at FROM orders
+      WHERE status='ENTREGADO' AND paid_at IS NULL
+    ) SELECT t.id AS "tableId",
+      CASE WHEN count(o.id)=0 THEN 'available'
+        WHEN bool_or(o.status='LISTO') THEN 'ready'
+        WHEN bool_or(o.status='ENTREGADO' AND o.paid_at IS NULL) THEN 'payment'
+        ELSE 'service' END AS state,
+      count(o.id)::int AS "openOrders", min(o.created_at) AS since,
+      coalesce(bool_or(o.user_id=$1),false) AS mine,
+      CASE WHEN $2 THEN coalesce(sum(o.total_cents) FILTER (WHERE o.paid_at IS NULL),0) END AS "pendingCents"
+      FROM restaurant_tables t LEFT JOIN active o ON o.table_id=t.id WHERE t.active
+      GROUP BY t.id ORDER BY t.floor,t.display_order,t.name`,
+      [me.id, me.permissions.includes("payments.create")],
+    );
+    res.json(
+      result.rows.map(({ pendingCents, ...row }) =>
+        me.permissions.includes("payments.create")
+          ? { ...row, pendingCents: Number(pendingCents) }
+          : row,
+      ),
+    );
+  });
   app.patch("/api/settings", p("settings.manage"), async (req, res) => {
     const input = z.object({ name }).strict().parse(req.body);
     await transaction(db, async (tx) => {
@@ -338,11 +367,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         (SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
           AND status IN ('ENTREGADO','CANCELADO') AND created_at>now()-interval '24 hours'
           ORDER BY created_at DESC LIMIT 200))
-      SELECT o.*,t.name AS table_name,u.name AS waiter,
+      SELECT o.*,u.name AS waiter,
       (SELECT json_agg(i ORDER BY i.name) FROM order_items i WHERE i.order_id=o.id) AS items,
       o.paid_at IS NOT NULL AS paid
       FROM visible v JOIN orders o ON o.id=v.id
-      JOIN restaurant_tables t ON t.id=o.table_id JOIN users u ON u.id=o.user_id
+      JOIN users u ON u.id=o.user_id
       ORDER BY o.created_at`,
       [ownOnly ? me.id : null],
     );
@@ -404,11 +433,20 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             ],
           );
         }
-        await audit(tx, req, "ORDER_CREATED", "orders", order.id, "SUCCESS", undefined, {
-          tableId: input.tableId,
-          totalCents: order.total_cents,
-          items: items.length,
-        });
+        await audit(
+          tx,
+          req,
+          "ORDER_CREATED",
+          "orders",
+          order.id,
+          "SUCCESS",
+          undefined,
+          {
+            tableId: input.tableId,
+            totalCents: order.total_cents,
+            items: items.length,
+          },
+        );
         await changed(tx);
         return order;
       }),
@@ -551,11 +589,20 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             [s.id, identity(req).id, input.amountCents, input.reason],
           )
         ).rows[0]!;
-        await audit(tx, req, "CASH_MOVEMENT_CREATED", "cash_movements", r.id, "SUCCESS", undefined, {
-          shiftId: s.id,
-          amountCents: input.amountCents,
-          reason: input.reason,
-        });
+        await audit(
+          tx,
+          req,
+          "CASH_MOVEMENT_CREATED",
+          "cash_movements",
+          r.id,
+          "SUCCESS",
+          undefined,
+          {
+            shiftId: s.id,
+            amountCents: input.amountCents,
+            reason: input.reason,
+          },
+        );
         await changed(tx);
         return r;
       }),
@@ -680,7 +727,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     const id = idSchema.parse(req.params.id);
     const payment = (
       await db.query(
-        "SELECT p.*,o.number,o.notes,t.name AS table_name FROM payments p JOIN orders o ON o.id=p.order_id JOIN restaurant_tables t ON t.id=o.table_id WHERE p.order_id=$1",
+        "SELECT p.*,o.number,o.notes,o.table_name,o.table_floor FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.order_id=$1",
         [id],
       )
     ).rows[0];
