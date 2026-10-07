@@ -50,3 +50,5 @@ CI/SAST están definidos y publicados, pero GitHub reporta 0 runs/checks a esta 
 Repetición final con migraciones 001+002+003: 396 recorridos, 2777 requests, 2772 checks correctos, 0 errores; p95 13.32 ms, media 7.61 ms, máximo 162.89 ms. Misma carga 5 VU/20 s. Docker build en Linux completado con instalación limpia, compilación y eliminación de dependencias de desarrollo.
 
 Smoke del contenedor Linux en NODE_ENV=production: readiness 200, UI estática 200, HSTS presente y hash/verificación Argon2id nativo correctos. No equivale a despliegue Render.
+
+Primer DAST remoto detectó que NODE_ENV=test del workflow afectaba el bundle React y emitía avisos de comentarios/timestamps de dependencias de desarrollo. El build web ahora fija NODE_ENV=production dentro de su proceso, independientemente del entorno de tests. No se silenciaron alertas. Se corrigió también la subida de reportes ZAP desde el directorio oculto de artefactos.

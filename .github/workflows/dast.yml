@@ -13,7 +13,7 @@ jobs:
         image: postgres:17-alpine
         env: { POSTGRES_USER: nativos, POSTGRES_PASSWORD: ci_only, POSTGRES_DB: nativos_load_test }
         ports: ['5432:5432']
-        options: --health-cmd "pg_isready -U nativos" --health-interval 5s --health-retries 10
+        options: --health-cmd "pg_isready -U nativos -d postgres" --health-interval 5s --health-retries 10
     env:
       LOAD_DATABASE_URL: postgresql://nativos:ci_only@localhost:5432/nativos_load_test
       LOAD_ORIGIN: http://localhost:3001
@@ -38,4 +38,4 @@ jobs:
           node scripts/check-security-reports.mjs zap .local/zap.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
-        with: { name: zap-baseline, path: '.local/zap.*', retention-days: 7 }
+        with: { name: zap-baseline, path: '.local/zap.*', retention-days: 7, include-hidden-files: true }
