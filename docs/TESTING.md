@@ -38,3 +38,13 @@ Alcance limitado: no prueba SSE a gran escala, múltiples instancias, duración 
 CI: lint/typecheck/unit/integration/build/dependency audit, Gitleaks historial, CodeQL security-extended y Playwright. ZAP baseline local contra entorno de ensayo se documentará al concluir; no sustituye escaneo autenticado de roles. Mantener logs/reportes libres de secretos reales. Los artefactos de tests solo contienen credenciales efímeras de fixtures; retención limitada.
 
 Pendientes: pruebas de restauración, balance de caja frente a cierre simultáneo con cobro, mayor matriz IDOR/custom roles/MFA de otros usuarios, pruebas de accesibilidad automatizada y navegación por teclado, revisión cruzada y verificación Render.
+
+## Revisión cruzada integrada
+
+Las 52 pruebas adicionales de Claude (19 DB + 33 API adversarial) se integraron con su migración 002. Se sumaron 3 regresiones de diagnóstico/readiness/cierre-versus-movimiento: **74 pruebas en cinco archivos, todas pasan**. Los 3 E2E volvieron a pasar sobre el bundle actualizado incluyendo pérdida de respuesta. Fixtures recrean exclusivamente DB locales conocidas nativos_*test; nunca desactivan triggers append-only.
+
+ZAP final: 6 URLs no autenticadas, 65 reglas PASS, 0 FAIL y dos grupos WARN informativos (SPA y contenido público cacheable); el JSON incluye información adicional de caché. No quedan riesgos low/medium/high tras cerrar font-src y habilitar COEP. El gate lee severidad real del JSON y falla con cualquier riesgo >= low, sin ignorar reglas. No certifica endpoints autenticados ni configuración TLS Render.
+
+CI/SAST están definidos y publicados, pero GitHub reporta 0 runs/checks a esta revisión; ejecución remota no verificada. La carga registrada arriba precede a los triggers de Claude; debe repetirse para medir el efecto del endurecimiento.
+
+Repetición final con migraciones 001+002+003: 396 recorridos, 2777 requests, 2772 checks correctos, 0 errores; p95 13.32 ms, media 7.61 ms, máximo 162.89 ms. Misma carga 5 VU/20 s. Docker build en Linux completado con instalación limpia, compilación y eliminación de dependencias de desarrollo.

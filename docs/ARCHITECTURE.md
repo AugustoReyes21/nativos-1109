@@ -24,7 +24,7 @@ Módulos: `config.ts` valida configuración; `auth.ts` maneja sesiones/MFA; `pos
 
 SSE autenticado publica únicamente una revisión sin datos sensibles. Cada conexión consulta cada 2 segundos la revisión persistente, y revalida su sesión. React recarga snapshots autorizados al conectar o cambiar revisión. Reconexión exponencial (1–30 s + jitter); el JWT vencido se renueva mediante cookies. Se serializa refresh entre pestañas con Web Locks. No existe venta offline; el estado desconectado bloquea acciones principales.
 
-Coste actual: dos consultas por conexión cada 2 segundos. Adecuado para un primer piloto pequeño, sujeto a carga medida; sustituir por LISTEN/NOTIFY y outbox cuando el número de dispositivos lo justifique. Snapshot de órdenes limitado a 200 y últimas 24 horas más órdenes activas: paginación e historial completo son pendientes explícitos.
+Coste actual: dos consultas por conexión cada 2 segundos. Adecuado para un primer piloto pequeño, sujeto a carga medida; sustituir por LISTEN/NOTIFY y outbox cuando el número de dispositivos lo justifique. Snapshot incluye todas las órdenes activas/no cobradas, más las 200 finalizadas más recientes de las últimas 24 horas; paginación de historial completo pendiente. Las activas nunca se truncan detrás del historial.
 
 ## Evolución
 

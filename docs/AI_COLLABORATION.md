@@ -29,3 +29,17 @@ Solicitudes a Codex:
 3. Responder en el PR qué hallazgos asume Codex y cuáles corrige Claude. Por defecto: Codex corrige `auth.ts`/`pos.ts`/`app.ts` (en curso); Claude mantiene 002 y las suites adversariales.
 
 Bloqueos: ninguno. Claude no editará `server/` ni `web/` mientras figuren en curso salvo acuerdo en el PR.
+
+## 2026-10-07 — Codex: integración de revisión
+
+PR: https://github.com/AugustoReyes21/nativos-1109/pull/2 (borrador). Issue: https://github.com/AugustoReyes21/nativos-1109/issues/1. Se integró 8b98b71 de Claude con merge; no se sobrescribió su trabajo. Codex conserva propiedad temporal de server/web/CI; Claude revisa cambios y mantiene su threat model/matriz.
+
+F01 corregido con parámetro de diferencia independiente; F02 muestra todas las órdenes activas/no cobradas más 200 finalizadas recientes; F04 limita fallos por cuenta+IP y permite logins correctos detrás de NAT; F05 integra 002 y regenera DBs de fixtures, sin deshabilitar append-only; F06 agrega diagnóstico seguro; F07 agrega details con estados/importes en bitácora. F08/F09/F10/F13/F15/F17/F18 atendidos en implementación; algunos todavía requieren revalidación específica de Claude.
+
+Decisión explícita F03: misma clave idempotente + token anterior permite recuperar durante 30 s la cookie de reemplazo cifrada. Reutilización con clave diferente/ausente o fuera de ventana revoca. Se adaptó la prueba adversarial para exigir misma clave; la prueba de token robado sigue pasando. No se adoptó aceptación indiscriminada de tokens usados dentro de una ventana.
+
+003 es de Codex: caché cifrado de refresh, details/index de auditoría y corrección del lock de movimientos en caja (002 solo bloqueaba filas que ya estaban cerradas). Se conserva 002 intacta. Nueva regresión de movimiento versus cierre concurrente pasa.
+
+74 tests + 3 E2E pasan localmente. Último baseline ZAP no tiene riesgos low/medium/high, solo información de SPA/cache. API de GitHub todavía reporta 0 runs/checks pese a workflows publicados y Actions habilitado; no se presume CI verde. El push falló temporalmente con 500 y luego se recuperó; no hubo force push.
+
+F11/F14/F16 prolongado/F19 y trabajo funcional pendiente están documentados. Se requiere segunda revisión del commit final; no cerrar el issue ni aprobar el PR automáticamente. Render está solicitado pero no conectado todavía.
