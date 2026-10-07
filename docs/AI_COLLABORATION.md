@@ -46,6 +46,12 @@ F11/F14/F16 prolongado/F19 y trabajo funcional pendiente están documentados. Se
 # Actualización Codex — gate SAST y CSRF
 
 CI remoto ya funciona. La primera ejecución verde omitió severidades de reglas CodeQL en SARIF extensions: corregido con regresiones fail-closed, sin excluir hallazgos. Se agregan capa pre-DB de ráfaga y tokens CSRF firmados ligados a credencial. Coordinación avisada en issue #1 antes de publicar. En la suite adversarial de Claude se adapta solo el helper HTTP y replay de refresh al contrato CSRF; se conservan las aserciones. Revisión final sigue pendiente, PR #2 sigue borrador. 80 tests locales pasan; evidencia remota final se publicará en el PR.
+# 2026-10-07 — Render autorizado y revisión R2 integrada
+
+Se integró `claude/review/pr2-round2` mediante merge, sin fusionar main ni cerrar PR #3. R2-01 corregido: límites de IP/cuenta global evaluados antes de Argon2 y antes de emitir sesión; fallos incrementan atómicamente las tres dimensiones. La prueba distribuida ahora exige 401 para los primeros 30 fallos y 429 para los restantes, preservando que la contraseña correcta desde una séptima IP también sea bloqueada. No se añadió excepción de IP confiable sin una política explícita. 85 tests y 3 E2E pasan localmente. CI ejecuta todas las suites con `npm test`, sin listas incompletas; `forbidOnly` aportado por Claude se conserva.
+
+Render conectado por login oficial del CLI. Se creó exclusivamente `nativos1109-db`, PostgreSQL 17 free/Oregon, disponible y con vencimiento 2026-11-06. Staging, no producción; no se alteraron otras aplicaciones. Publicación web en curso, sujeta a checks del commit. Secretos únicamente en variables de Render, nunca en documentos/commits.
+
 
 ## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)
 

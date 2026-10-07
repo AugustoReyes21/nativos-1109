@@ -202,28 +202,42 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         .object({ email, password: z.string().min(1).max(128) })
         .strict()
         .parse(req.body);
-      // Every failure cap is checked BEFORE Argon2, so a correct guess made after
-      // a cap is reached is refused as well. The per-account cap spans all IPs
-      // (distributed guessing) except the restaurant's own trusted IPs, so an
-      // external attacker cannot lock staff out during service.
+      // Every failure cap is checked BEFORE Argon2 (and again after it, for
+      // concurrent attempts), so a correct guess past a cap is refused too.
+      // The account-wide cap spans all IPs except the restaurant's configured
+      // TRUSTED_LOGIN_IPS, so an outsider cannot lock staff out during service.
       const ip = req.ip ?? "unknown";
-      const caps = {
-        pair: limitKey("login-failure", input.email + ":" + ip),
-        ip: limitKey("login-failed-ip", ip),
-        account: limitKey("login-account-failure", input.email),
+      const trusted = c.TRUSTED_LOGIN_IPS.includes(ip);
+      const failureKey = "login-failure:" + digest(input.email + ":" + ip);
+      const failureKeys = [
+        failureKey,
+        "login-failed-ip:" + digest(ip),
+        "login-failed-account:" + digest(input.email),
+      ];
+      const checkFailures = async () => {
+        const failures = await db.query<{ blocked: boolean }>(
+          `SELECT EXISTS(SELECT 1 FROM rate_limits WHERE expires_at>now() AND
+          ((key=$1 AND hits>=10) OR (key=$2 AND hits>=100) OR (key=$3 AND hits>=30 AND NOT $4))) AS blocked`,
+          [...failureKeys, trusted],
+        );
+        if (failures.rows[0]?.blocked) {
+          // One audit row per account per 15 min: the log is append-only and
+          // must not become a flooding target.
+          if ((await bump("login-throttle-audit", input.email, 900)) === 1)
+            await audit(
+              db,
+              req,
+              "LOGIN_THROTTLED",
+              "auth",
+              undefined,
+              "FAILURE",
+              undefined,
+              { accountHash: digest(input.email) },
+            );
+          fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
+        }
       };
-      const counts = await db.query<{ key: string; hits: number }>(
-        "SELECT key,hits FROM rate_limits WHERE key=ANY($1::text[]) AND expires_at>now()",
-        [Object.values(caps)],
-      );
-      const hits = (key: string) =>
-        counts.rows.find((r) => r.key === key)?.hits ?? 0;
-      if (
-        hits(caps.pair) >= 10 ||
-        hits(caps.ip) >= 100 ||
-        (hits(caps.account) >= 30 && !c.TRUSTED_LOGIN_IPS.includes(ip))
-      )
-        fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
+      await checkFailures();
       const { rows } = await db.query<User>(
         "SELECT * FROM users WHERE email=$1",
         [input.email],
@@ -235,16 +249,23 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         input.password,
       );
       if (!valid || !u?.active) {
-        await bump("login-failure", input.email + ":" + ip, 900);
-        await bump("login-failed-ip", ip, 900);
-        await bump("login-account-failure", input.email, 3600);
-        // A pseudonymous account tag lets operators see which account is targeted.
+        // Record every dimension atomically: hitting one cap cannot skip the others.
+        await db.query(
+          `INSERT INTO rate_limits(key,hits,expires_at)
+          SELECT key,1,now()+seconds*interval '1 second' FROM unnest($1::text[],$2::int[]) AS v(key,seconds)
+          ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN rate_limits.expires_at<now() THEN 1 ELSE rate_limits.hits+1 END,
+          expires_at=CASE WHEN rate_limits.expires_at<now() THEN EXCLUDED.expires_at ELSE rate_limits.expires_at END`,
+          [failureKeys, [900, 900, 3600]],
+        );
+        // A pseudonymous account tag shows operators which account is targeted.
         await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE", undefined, {
-          account: digest(input.email).slice(0, 16),
+          accountHash: digest(input.email),
         });
         return fail(401, "INVALID_CREDENTIALS", "Credenciales inválidas");
       }
-      await db.query("DELETE FROM rate_limits WHERE key=$1", [caps.pair]);
+      // Another concurrent request may have exhausted a budget during Argon2.
+      await checkFailures();
+      await db.query("DELETE FROM rate_limits WHERE key=$1", [failureKey]);
       if (u.mfa_enabled || u.role === "ADMINISTRADOR") {
         const token = randomToken();
         await db.query(

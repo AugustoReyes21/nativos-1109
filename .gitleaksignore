@@ -1,0 +1,4 @@
+# Reviewed false positive only: historical TOTP fixture in a disposable local test DB.
+# Replaced with a random secret; never provisioned to Render or a real account.
+# Exact historical commit/file/rule/line only; all other history remains scanned.
+ec491bac8c1f64c97df73b1c7886df7e0a615d64:tests/security/api-adversarial.test.ts:generic-api-key:301

@@ -6,6 +6,7 @@ import request from 'supertest';
 import pg from 'pg';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { SignJWT } from 'jose';
+import { Secret } from 'otpauth';
 import { createApp } from '../../server/app.js';
 import { config, type Config } from '../../server/config.js';
 import { database, type DB } from '../../server/db.js';
@@ -329,7 +330,7 @@ describe('kitchen display', () => {
 
 describe('administration', () => {
   it('two administrators demoting each other at once cannot leave the system without an MFA administrator', async () => {
-    const secret = 'KRUGS4ZANFZSAYJAOBUGCZLTMVZCA4TP';
+    const secret = new Secret({ size: 20 }).base32;
     const hash = await passwordHash(password); const created: string[] = [];
     for (const n of ['x', 'y']) created.push((await one<{ id: string }>(`INSERT INTO users(email,name,password_hash,role,mfa_secret,mfa_enabled)
       VALUES ($1,$1,$2,'ADMINISTRADOR',$3,true) RETURNING id`, [`admin${n}@example.test`, hash, encrypt(secret, c.MFA_KEY)])).id);
