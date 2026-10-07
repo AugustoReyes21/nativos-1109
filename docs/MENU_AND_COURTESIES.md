@@ -43,4 +43,4 @@ En Órdenes → Autorizar cortesía, administrador/superadmin elige cantidades y
 
 `tests/menu-courtesies.test.ts`: precios/stock, MFA y permisos, promoción idempotente, caja/motivo, neto/recibo, concurrencia, invariantes SQL y auditoría. `e2e/courtesies.spec.ts`: configuración desde administración y cortesía parcial/total en escritorio/tablet/móvil, sin inventar dinero ni reponer stock. Consultar TESTING.md para resultado de la ejecución final.
 
-Estado: implementación en rama `codex/feature/menu-superadmin-courtesies`; no equivale a carga en Render ni promoción ya ejecutada. Publicación y revisión independiente se registran por separado en DEPLOYMENT.md/AI_COLLABORATION.md.
+Estado: publicado en Render el 2026-10-07, commit `b43bf89`, por autorización del propietario. Menú verificado: 20 productos a stock 0; correo confirmado promovido a SUPERADMIN con MFA conservado y sesiones revocadas. No hay mesas reales configuradas todavía. Evidencia y límites en DEPLOYMENT.md. La revisión independiente financiera y las mejoras adicionales de UX permanecen abiertas.

@@ -4,9 +4,10 @@
 
 Publicado el 2026-10-07 mediante CLI oficial autorizado por el propietario: **https://nativos1109.onrender.com**. Entorno gratuito de ensayo, **no producción comercial**. No se modificaron otros servicios de la cuenta.
 
-- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama `codex/feature/secure-pos-foundation`.
+- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama actual `codex/feature/menu-superadmin-courtesies`.
 - PostgreSQL 17 `dpg-db36u0rncjis73elmaq0-a`, Oregon/free; **vence el 2026-11-06**. No guardar ventas reales aquí. Cambiar a infraestructura persistente con backups antes de operación comercial.
 - Primer deploy `dep-db3741cs728c73biiqg0`, commit `169d9d3`, después de verify/sast/baseline exitosos. CI: runs 37651290538 y 37651290459.
+- Actualización publicada: `dep-db38sm4s728c73bnk5lg`, commit `b43bf89b8361d78dcdaf81047ed4f104c66259f0`, estado Render `live`. CI previo aprobado: Quality/security 37666025025 y 37666034735; ZAP 37666034730. Incluye interfaz de dos niveles, reservas exclusivas, menú y cortesías.
 - Verificados remotamente `/`, `/health/live`, `/health/ready`: 200; HTTPS/HSTS presentes. Migraciones se ejecutaron al arrancar. No se modificó el esquema manualmente.
 - SMTP Brevo con STARTTLS obligatorio en 2525, autenticación comprobada. MAIL_FROM/SMTP_USER/SMTP_PASSWORD están en variables Render, no en Git. La clave compartida en chat debe rotarse desde Brevo y actualizarse directamente en Render.
 - Administrador inicial creado con `server/bootstrap.ts` compilado y contraseña aleatoria solo en memoria; no existe contraseña predeterminada publicada. Se solicitó el correo para elegir contraseña y se comprobó ausencia de RESET_DELIVERY_FAILURE. Aceptación SMTP no prueba entrega en inbox. La persona completa MFA; login previo a enrollment no emitió sesión POS.
@@ -57,6 +58,12 @@ Elegir plan sin suspensión y PostgreSQL persistente con backups/PITR adecuados.
 Ensayar backup cifrado y restauración de usuarios, MFA, órdenes y pagos; custodiar MFA_KEY fuera de DB para poder descifrar tras restauración. No restaurar datos sobre producción sin plan. Rollback de aplicación solo si esquema conserva compatibilidad; correcciones de schema mediante nueva migración, no modificar checksums anteriores.
 
 Referencias: [Blueprint](https://render.com/docs/blueprint-spec), [Health checks](https://render.com/docs/health-checks), [Deploys y CI](https://render.com/docs/deploys).
-# Próximo bloque: menú, propietario y cortesías
+# Menú, propietario y cortesías publicados — 2026-10-07
 
-La rama `codex/feature/menu-superadmin-courtesies` contiene 008/009 y el comando `promote-owner`; **no se ha desplegado este bloque ni se ha ejecutado la promoción remota**. Esperar CI y revisión independiente. Tras desplegar API/UI compatibles y verificar health/migraciones, ejecutar la promoción documentada en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md) para el correo confirmado. Verificar rol, revocación de sesiones y auditoría sin exponer datos sensibles. Mantener stock 0; el administrador registra existencias reales. No volver al auth antiguo después de promover SUPERADMIN.
+El propietario autorizó explícitamente actualizar staging con el PR #9. Se desplegó el commit exacto indicado arriba después de CI verde, sin fusionar main. Todas las migraciones 001–009 fueron verificadas por nombre/checksum contra los archivos versionados. El HTML remoto referencia el mismo bundle verificado localmente (`index-CeaelnVW.js`). `/health`, `/health/live`, `/health/ready` responden 200 con HSTS. Navegador real remoto: login visible, sin errores JavaScript/recursos ni desbordamiento horizontal en escritorio y móvil. Las pantallas autenticadas se validaron con nueve E2E en una DB aislada; no se suplantó al propietario para probarlas en staging.
+
+Cuenta `reyessamayoa8@gmail.com` promovida con `promoteOwner`, después de confirmar despliegue compatible. Verificado: SUPERADMIN activo, 18 permisos, MFA habilitado y obligatorio, cero sesiones anteriores activas. Contraseña y configuración MFA conservadas. El usuario debe iniciar sesión nuevamente. Acceso PostgreSQL externo temporal limitado a IP /32 y TLS verificado; al finalizar se restauró y comprobó `ipAllowList: []`. No se publicaron credenciales ni se cambió SMTP.
+
+Datos antes/después: una cuenta conservada; cero órdenes y pagos; catálogo pasa de 0 a 20 productos, todos con stock 0. Hay **cero mesas configuradas**: el propietario debe crear las reales para los niveles 1/2 en Productos y mesas y establecer las cantidades de jornada. No se inventaron mesas, existencias ni ventas.
+
+La publicación solicitada no equivale a cierre de la revisión independiente financiera ni a producción comercial. UI-03/04/05 y CL-02/03 siguen pendientes en el dictamen de Claude. No volver al auth antiguo después de promover SUPERADMIN. Contrato/operación en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md).
