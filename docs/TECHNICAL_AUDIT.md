@@ -1,5 +1,9 @@
 # Auditoría técnica — Nativos1109
 
+## Exclusión operativa solicitada por el propietario — 2026-10-07
+
+**HIGH / P1:** el estado global no impedía que dos meseros seleccionaran una mesa antes de existir una orden. Añadida reserva temporal PostgreSQL (007), lock exclusivo por mesa compartido por adquisición y creación de órdenes, comprobación de propietario/sesión, vencimiento y generación para renovaciones/liberaciones. Pruebas reales de carrera y doble sesión demuestran un único ganador sin crear órdenes vacías. La UI también bloquea la mesa, pero no es la barrera de seguridad. Revisión de Claude solicitada, aún pendiente; publicación en Render no realizada en este bloque.
+
 ## Incremento UI de dos niveles — PR #7, 2026-10-07
 
 - **HIGH / D1 (Claude):** calcular disponibilidad a partir de órdenes filtradas por mesero oculta actividad de compañeros. Corregido antes de desplegar UI: `/api/tables/status` agrega todas las órdenes; importes requieren `payments.create`; no expone ítems ni usuarios ajenos. Revisión adversarial independiente pendiente.

@@ -1,5 +1,11 @@
 # Verificación
 
+## Selección exclusiva antes de crear órdenes — 2026-10-07
+
+`tests/table-claims.test.ts` añade nueve casos con PostgreSQL real: clics simultáneos, bloqueo sin orden, API directa, RBAC/CSRF, UUID/replay, expiración, renovación/liberación atrasadas, cambio atómico, logout, orden activa y conservación del intento idempotente entre generaciones. Suite completa: **103/103** pasan.
+
+`e2e/table-claims.spec.ts` usa dos sesiones de mesero reales: el segundo ve la mesa reservada/deshabilitada, la DB confirma cero órdenes, la API rechaza seleccionar con 409, y descartar permite al siguiente mesero tomarla. Junto al recorrido POS existente: **6/6 E2E** en escritorio/tablet/móvil en la primera ejecución completa. Se reejecutan tras ajustes finales; resultado final en PR #7. No mocks ni eliminación de aserciones anteriores. Contrato y límites: `TABLE_CLAIMS.md`.
+
 ## Sala Nativos — 2026-10-07, PR #7
 
 `tests/table-snapshot.test.ts`: creación idempotente, ediciones concurrentes con versión (200/409), snapshot de nombre/nivel en orden y recibo, integridad del snapshot en DB, estado de mesa pagada pero no entregada, y upgrade de historial existente pagado/cancelado con guards restaurados. Cuatro pruebas pasan; suite completa: **94/94** en 5110761, seguida de **3/3 E2E**. Lint/typecheck/build pasan; npm audit informa 0 vulnerabilidades. Bundle inicial 120.41 KB gzip (CSS 5.71 KB). CI y revisión independiente se consultan en PR #7, no se presumen a partir de este resultado local.

@@ -10,6 +10,8 @@ Claude: revisar dirección visual, flujos, accesibilidad, contraste, claridad de
 
 ## Experiencia
 
+Actualización explícita del propietario: **selección exclusiva desde el primer clic**, aunque no exista orden. Se incorpora estado Reservada y lease backend antes de abrir el compositor; otro mesero no puede seleccionar ni crear por API directa mientras esté reservada/atendida. Reglas de vencimiento, liberación y revisión independiente en `TABLE_CLAIMS.md`. Esta actualización amplía el alcance original, que solo mostraba estado de órdenes.
+
 - Identidad: verde bosque, fondos marfil, acento ámbar; jerarquía editorial, navegación lateral desktop y compacta móvil, superficies limpias y estados inequívocos.
 - Entrada del mesero: **Salón y mesas**. Selector Nivel 1 / Nivel 2, representación de mesas con sillas y capacidad, búsqueda y estados derivados de órdenes reales. No simular reservas ni ocupación física que el sistema todavía no conoce.
 - Tocar una mesa abre un compositor con esa mesa preseleccionada; no crea órdenes vacías. Mantener explícita la confirmación a cocina y la idempotencia.

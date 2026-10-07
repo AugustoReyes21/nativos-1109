@@ -26,6 +26,18 @@ function App() {
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const contentRef = useRef<HTMLElement>(null);
+  const lastInteraction = useRef(Date.now());
+  useEffect(() => {
+    const active = () => {
+      lastInteraction.current = Date.now();
+    };
+    window.addEventListener("pointerdown", active);
+    window.addEventListener("keydown", active);
+    return () => {
+      window.removeEventListener("pointerdown", active);
+      window.removeEventListener("keydown", active);
+    };
+  }, []);
   const attempts = useRef(new Map<string, string>());
   const [connected, setConnected] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({
@@ -75,7 +87,14 @@ function App() {
     data: unknown,
     method = "POST",
   ): Promise<T> => {
-    const signature = method + ":" + path + ":" + JSON.stringify(data);
+    // A renewed selection lease is authorization context, not a new order.
+    const businessData =
+      path === "/orders" && data !== null && typeof data === "object"
+        ? Object.fromEntries(
+            Object.entries(data).filter(([key]) => key !== "claimId"),
+          )
+        : data;
+    const signature = method + ":" + path + ":" + JSON.stringify(businessData);
     const hash = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(user?.id + signature),
@@ -228,6 +247,90 @@ function App() {
     };
   }, [user, load]);
   useEffect(() => {
+    if (!user) return;
+    // Lease expiry and logout need no background scheduler/SSE event to be seen.
+    let pending = false,
+      stopped = false;
+    const timer = setInterval(() => {
+      if (!navigator.onLine || pending) return;
+      pending = true;
+      void api<TableStatus[]>("/tables/status")
+        .then((statuses) => {
+          if (!stopped) setTableStatuses(statuses);
+        })
+        .catch((e: unknown) => {
+          if (!stopped) showError(e);
+        })
+        .finally(() => {
+          pending = false;
+        });
+    }, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [user]);
+  useEffect(() => {
+    if (!user || !draft.tableId || !draft.claimId || !connected) return;
+    const tableId = draft.tableId,
+      claimId = draft.claimId;
+    let stopped = false,
+      pending = false;
+    const renew = () => {
+      if (
+        pending ||
+        lock.current ||
+        !navigator.onLine ||
+        document.visibilityState !== "visible" ||
+        Date.now() - lastInteraction.current > 240000
+      )
+        return;
+      pending = true;
+      void api<{ expiresAt: string }>(
+        `/tables/${tableId}/claim/renew`,
+        "POST",
+        { claimId },
+      )
+        .then((result) => {
+          if (!stopped)
+            setDraft((old) =>
+              old.claimId === claimId
+                ? { ...old, claimExpiresAt: result.expiresAt }
+                : old,
+            );
+        })
+        .catch((e: unknown) => {
+          if (stopped) return;
+          if (
+            e instanceof ApiError &&
+            [
+              "TABLE_CLAIM_EXPIRED",
+              "TABLE_IN_USE",
+              "UNAUTHENTICATED",
+              "SESSION_EXPIRED",
+            ].includes(e.code)
+          ) {
+            setDraft((old) =>
+              old.claimId === claimId
+                ? { ...old, claimId: null, claimExpiresAt: null }
+                : old,
+            );
+          }
+          showError(e);
+        })
+        .finally(() => {
+          pending = false;
+        });
+    };
+    // Renew on reconnect as well as while navigating with an unfinished draft.
+    renew();
+    const timer = setInterval(renew, 60000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [user, draft.tableId, draft.claimId, connected]);
+  useEffect(() => {
     if (!draft.items.length) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -236,7 +339,7 @@ function App() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [draft.items.length]);
-  const changeTable = (id: string) => {
+  const changeTable = async (id: string, open = false) => {
     if (
       id !== draft.tableId &&
       draft.items.length &&
@@ -244,9 +347,63 @@ function App() {
         "Hay productos en el borrador. ¿Mover este pedido a la mesa seleccionada?",
       )
     )
-      return false;
-    setDraft((old) => ({ ...old, tableId: id }));
-    return true;
+      return;
+    await run(async () => {
+      if (!id) {
+        if (draft.tableId && draft.claimId)
+          await api(`/tables/${draft.tableId}/claim/release`, "POST", {
+            claimId: draft.claimId,
+          });
+        setDraft((old) => ({
+          ...old,
+          tableId: "",
+          claimId: null,
+          claimExpiresAt: null,
+        }));
+      } else {
+        const status = tableStatuses.find((s) => s.tableId === id);
+        const claimId =
+          status?.claimId &&
+          status.claimExpiresAt &&
+          new Date(status.claimExpiresAt).getTime() > Date.now()
+            ? status.claimId
+            : crypto.randomUUID();
+        const claim = await api<{ claimId: string; expiresAt: string }>(
+          `/tables/${id}/claim`,
+          "POST",
+          {
+            claimId,
+            ...(draft.tableId && draft.claimId
+              ? { previous: { tableId: draft.tableId, claimId: draft.claimId } }
+              : {}),
+          },
+        );
+        setDraft((old) => ({
+          ...old,
+          tableId: id,
+          claimId: claim.claimId,
+          claimExpiresAt: claim.expiresAt,
+        }));
+        if (open) setView("nueva");
+      }
+      await reload();
+    });
+  };
+  const discard = () => {
+    if (
+      draft.items.length &&
+      !window.confirm("¿Descartar estos productos y liberar la mesa?")
+    )
+      return;
+    void run(async () => {
+      if (draft.tableId && draft.claimId)
+        await api(`/tables/${draft.tableId}/claim/release`, "POST", {
+          claimId: draft.claimId,
+        });
+      setDraft(emptyDraft());
+      setView("salon");
+      await reload();
+    });
   };
   const feedback = error && (
     <div role="alert" className="alert">
@@ -362,7 +519,7 @@ function App() {
             }
             select={(table) => {
               if (can("orders.create")) {
-                if (changeTable(table.id)) setView("nueva");
+                void changeTable(table.id, true);
               } else {
                 setOrderTable(table.id);
                 setView("ordenes");
@@ -402,6 +559,8 @@ function App() {
             catalog={catalog}
             draft={draft}
             setDraft={setDraft}
+            statuses={tableStatuses}
+            discard={discard}
             changeTable={changeTable}
             status={tableStatuses.find((s) => s.tableId === draft.tableId)}
             back={() => setView("salon")}

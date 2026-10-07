@@ -1,4 +1,25 @@
 /* Sala Nativos: shared tokens and an operational, touch-first visual language. */
+.table-card.reserved {
+  border-color: #d9be94;
+  background: #fff8eb;
+}
+.table-state.reserved {
+  color: #875814;
+}
+.table-card:disabled {
+  opacity: 0.8;
+}
+.claim-notice {
+  font-size: 0.8rem;
+  padding: 12px;
+  background: #edf3e7;
+  border-radius: 9px;
+  margin-bottom: 14px;
+}
+.claim-notice button {
+  width: 100%;
+  margin-top: 10px;
+}
 :root {
   --forest: #173e34;
   --ink: #233c34;
