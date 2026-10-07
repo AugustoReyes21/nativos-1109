@@ -134,7 +134,6 @@ export function FloorPlan({
               <button
                 key={n}
                 aria-pressed={floor === n}
-                aria-label={`Nivel ${n} ${n === 1 ? "Planta baja" : "Segundo nivel"}`}
                 onClick={() => {
                   setFloor(n);
                   setSearch("");
@@ -204,7 +203,6 @@ export function FloorPlan({
                 }
                 whileTap={reduced ? undefined : { scale: 0.98 }}
                 onClick={() => select(table)}
-                aria-label={`${table.name}, nivel ${table.floor}, ${label}, ${status?.openOrders ?? 0} órdenes. ${canCreate && status?.blocked ? "No disponible para seleccionar" : canCreate ? "Crear orden" : "Ver órdenes"}`}
               >
                 <span className={`table-state ${state ?? ""}`}>
                   <span />

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { AxeBuilder } from "@axe-core/playwright";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { passwordHash, totp } from "../server/security.js";
@@ -96,14 +97,18 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     ).toBeVisible();
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page
-      .getByRole("button", { name: "Nivel 2 Segundo nivel", exact: true })
+      .getByRole("button", { name: /Nivel 2 Segundo nivel$/ })
       .click();
     const visualTable = page.getByRole("button", {
-      name: new RegExp(`Mesa-${tag}, nivel 2, Disponible`),
+      name: new RegExp(`Disponible Mesa-${tag}`),
     });
     await expect(visualTable).toContainText("6 personas");
     await expect(visualTable).toBeEnabled();
     await expect(page.locator(".table-plan")).toHaveCSS("opacity", "1");
+    const accessibility = await new AxeBuilder({ page })
+      .withRules(["label-content-name-mismatch", "color-contrast"])
+      .analyze();
+    expect(accessibility.violations).toEqual([]);
     await page.screenshot({
       path: "test-results/floor-" + info.project.name + ".png",
       fullPage: true,
@@ -164,7 +169,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       .click();
     await expect(
       page.getByRole("button", {
-        name: new RegExp(`Mesa-${tag}, nivel 2, Para servir`),
+        name: new RegExp(`Para servir Mesa-${tag}`),
       }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Lista", exact: true }).click();
