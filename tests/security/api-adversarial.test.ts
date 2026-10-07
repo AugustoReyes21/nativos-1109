@@ -188,10 +188,41 @@ describe('authentication and MFA', () => {
         .set('X-CSRF-Token', csrf.body.token as string).send({ email: 'cashier@example.test', password: guess });
     };
     try {
-      for (let ip = 1; ip <= 6; ip++) for (let n = 0; n < 9; n++) expect((await attempt(`203.0.113.${ip}`, `Guess-${ip}-${n}-password`)).status).toBe(401);
-      // 54 wrong guesses within minutes from 6 addresses: a 7th address must not get a fresh budget.
+      const statuses: number[] = [];
+      for (let ip = 1; ip <= 6; ip++) for (let n = 0; n < 9; n++) statuses.push((await attempt(`203.0.113.${ip}`, `Guess-${ip}-${n}-password`)).status);
+      // Each address stays under its own per-(account, IP) budget of 10; the
+      // account-wide cap of 30 failures must stop the campaign as a whole.
+      expect(statuses.slice(0, 30).every(s => s === 401)).toBe(true);
+      expect(statuses.slice(30).every(s => s === 429)).toBe(true);
+      // A 7th address gets no fresh budget, even with the right password.
       expect((await attempt('203.0.113.99', password)).status).toBe(429);
-    } finally { server.app.set('trust proxy', false); }
+      // Staff on the restaurant's own trusted IP can still log in during the attack.
+      c.TRUSTED_LOGIN_IPS.push('198.51.100.7');
+      expect((await attempt('198.51.100.7', password)).status).toBe(200);
+    } finally { server.app.set('trust proxy', false); c.TRUSTED_LOGIN_IPS.length = 0; }
+  });
+
+  it('password reset does not wait for the mail server (no account enumeration by timing)', async () => {
+    // A mailer that takes 3 s: the response for an existing account must not reflect it.
+    const slow = createApp(db, c, () => new Promise(resolve => setTimeout(resolve, 3000)));
+    try {
+      const a = request.agent(slow.app); const started = performance.now();
+      expect((await csrfPost(a, 'post', '/api/auth/forgot-password', { email: 'waitera@example.test' }, randomUUID())).status).toBe(200);
+      expect(performance.now() - started).toBeLessThan(1500);
+    } finally { slow.closeStreams(); }
+  });
+
+  it('the refresh retry window survives a 4-minute outage but not a 6-minute one', async () => {
+    for (const [minutes, expected] of [[4, 200], [6, 401]] as const) {
+      const a = request.agent(server.app);
+      const r = await post(a, '/api/auth/login', { email: 'kitchen@example.test', password });
+      const refresh = (r.headers['set-cookie'] as unknown as string[]).find(v => v.startsWith('refresh='))!.split(';')[0]!;
+      const retryKey = randomUUID();
+      expect((await replayRefresh(server.app, refresh, retryKey)).status).toBe(200);
+      await db.query(`UPDATE refresh_tokens SET used_at=now()-$1*interval '1 minute' WHERE hash=encode(sha256(convert_to($2,'UTF8')),'hex')`,
+        [minutes, refresh.slice('refresh='.length)]);
+      expect((await replayRefresh(server.app, refresh, retryKey)).status).toBe(expected);
+    }
   });
 
   it('a whole restaurant behind one NAT IP can still log in at shift change (25 logins)', async () => {

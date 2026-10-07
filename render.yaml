@@ -1,4 +1,7 @@
-# Staging by default. Connect Render before provisioning.
+# TEST ENVIRONMENT ON THE FREE PLAN (owner decision 2026-10-07). Not for real sales:
+# - the free Postgres EXPIRES 30 DAYS after creation and has NO backups;
+# - the free web service sleeps after 15 min without traffic (~1 min to wake).
+# Before real use, follow "Paso a producción" in docs/DEPLOYMENT.md.
 services:
   - type: web
     name: nativos1109
@@ -36,6 +39,9 @@ services:
       - key: SMTP_PASSWORD
         sync: false
       - key: MAIL_FROM
+        sync: false
+      # Restaurant public IP(s): exempt from the per-account login cap.
+      - key: TRUSTED_LOGIN_IPS
         sync: false
 databases:
   - name: nativos1109-db

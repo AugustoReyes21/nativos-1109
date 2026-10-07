@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { hkdfSync } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
@@ -40,6 +41,10 @@ const tokenInput = z
 
 export function auth(db: DB, c: Config, mail: Mailer) {
   const key = new TextEncoder().encode(c.JWT_SECRET);
+  // Dedicated subkey: cached refresh replacements never share a key with MFA secrets.
+  const replacementKey = Buffer.from(
+    hkdfSync("sha256", Buffer.from(c.MFA_KEY, "hex"), Buffer.alloc(0), "nativos1109/refresh-replacement/v1", 32),
+  ).toString("hex");
   const cookie = {
     httpOnly: true,
     secure: c.NODE_ENV === "production",
@@ -57,6 +62,17 @@ export function auth(db: DB, c: Config, mail: Mailer) {
       : "";
   let dummyHash: Promise<string> | undefined;
 
+  const limitKey = (label: string, subject: string) =>
+    `${label}:${digest(subject)}`;
+  async function bump(label: string, subject: string, seconds: number) {
+    const { rows } = await db.query<{ hits: number }>(
+      `INSERT INTO rate_limits(key,hits,expires_at) VALUES ($1,1,now()+$2*interval '1 second')
+      ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN rate_limits.expires_at<now() THEN 1 ELSE rate_limits.hits+1 END,
+      expires_at=CASE WHEN rate_limits.expires_at<now() THEN EXCLUDED.expires_at ELSE rate_limits.expires_at END RETURNING hits`,
+      [limitKey(label, subject), seconds],
+    );
+    return rows[0]?.hits;
+  }
   async function limit(
     req: Request,
     label: string,
@@ -64,13 +80,7 @@ export function auth(db: DB, c: Config, mail: Mailer) {
     seconds: number,
     subject = req.ip ?? "unknown",
   ) {
-    const { rows } = await db.query<{ hits: number }>(
-      `INSERT INTO rate_limits(key,hits,expires_at) VALUES ($1,1,now()+$2*interval '1 second')
-      ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN rate_limits.expires_at<now() THEN 1 ELSE rate_limits.hits+1 END,
-      expires_at=CASE WHEN rate_limits.expires_at<now() THEN EXCLUDED.expires_at ELSE rate_limits.expires_at END RETURNING hits`,
-      [`${label}:${digest(subject)}`, seconds],
-    );
-    if ((rows[0]?.hits ?? max + 1) > max)
+    if (((await bump(label, subject, seconds)) ?? max + 1) > max)
       fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
   }
   async function accessToken(userId: string, sessionId: string) {
@@ -192,12 +202,27 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         .object({ email, password: z.string().min(1).max(128) })
         .strict()
         .parse(req.body);
-      const failureKey = "login-failure:" + digest(input.email + ":" + req.ip);
-      const failures = await db.query<{ hits: number }>(
-        "SELECT hits FROM rate_limits WHERE key=$1 AND expires_at>now()",
-        [failureKey],
+      // Every failure cap is checked BEFORE Argon2, so a correct guess made after
+      // a cap is reached is refused as well. The per-account cap spans all IPs
+      // (distributed guessing) except the restaurant's own trusted IPs, so an
+      // external attacker cannot lock staff out during service.
+      const ip = req.ip ?? "unknown";
+      const caps = {
+        pair: limitKey("login-failure", input.email + ":" + ip),
+        ip: limitKey("login-failed-ip", ip),
+        account: limitKey("login-account-failure", input.email),
+      };
+      const counts = await db.query<{ key: string; hits: number }>(
+        "SELECT key,hits FROM rate_limits WHERE key=ANY($1::text[]) AND expires_at>now()",
+        [Object.values(caps)],
       );
-      if ((failures.rows[0]?.hits ?? 0) >= 10)
+      const hits = (key: string) =>
+        counts.rows.find((r) => r.key === key)?.hits ?? 0;
+      if (
+        hits(caps.pair) >= 10 ||
+        hits(caps.ip) >= 100 ||
+        (hits(caps.account) >= 30 && !c.TRUSTED_LOGIN_IPS.includes(ip))
+      )
         fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
       const { rows } = await db.query<User>(
         "SELECT * FROM users WHERE email=$1",
@@ -210,12 +235,16 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         input.password,
       );
       if (!valid || !u?.active) {
-        await limit(req, "login-failure", 10, 900, input.email + ":" + req.ip);
-        await limit(req, "login-failed-ip", 100, 900);
-        await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE");
+        await bump("login-failure", input.email + ":" + ip, 900);
+        await bump("login-failed-ip", ip, 900);
+        await bump("login-account-failure", input.email, 3600);
+        // A pseudonymous account tag lets operators see which account is targeted.
+        await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE", undefined, {
+          account: digest(input.email).slice(0, 16),
+        });
         return fail(401, "INVALID_CREDENTIALS", "Credenciales inválidas");
       }
-      await db.query("DELETE FROM rate_limits WHERE key=$1", [failureKey]);
+      await db.query("DELETE FROM rate_limits WHERE key=$1", [caps.pair]);
       if (u.mfa_enabled || u.role === "ADMINISTRADOR") {
         const token = randomToken();
         await db.query(
@@ -382,7 +411,7 @@ export function auth(db: DB, c: Config, mail: Mailer) {
             replacement_encrypted: string | null;
             retry_valid: boolean;
           }>(
-            "SELECT *,used_at>now()-interval '30 seconds' AS retry_valid FROM refresh_tokens WHERE hash=$1",
+            "SELECT *,used_at>now()-interval '5 minutes' AS retry_valid FROM refresh_tokens WHERE hash=$1",
             [hash],
           )
         ).rows[0]!;
@@ -395,14 +424,19 @@ export function auth(db: DB, c: Config, mail: Mailer) {
             t.retry_valid &&
             t.replacement_encrypted
           ) {
-            const refresh = decrypt(t.replacement_encrypted, c.MFA_KEY);
-            const successor = (
+            let refresh: string | null = null;
+            try {
+              refresh = decrypt(t.replacement_encrypted, replacementKey);
+            } catch {
+              // Unreadable cache (e.g. key rotation): fall through to revocation.
+            }
+            const successor = refresh === null ? undefined : (
               await tx.query<{ used_at: Date | null }>(
                 "SELECT used_at FROM refresh_tokens WHERE hash=$1",
                 [digest(refresh)],
               )
             ).rows[0];
-            if (successor && !successor.used_at)
+            if (refresh !== null && successor && !successor.used_at)
               return { refresh, access: await accessToken(s.user_id, s.id) };
           }
           await tx.query("UPDATE sessions SET revoked_at=now() WHERE id=$1", [
@@ -432,7 +466,7 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         const refresh = randomToken();
         await tx.query(
           "UPDATE refresh_tokens SET used_at=now(),retry_key_hash=$2,replacement_encrypted=$3 WHERE hash=$1",
-          [hash, retryHash, retryHash ? encrypt(refresh, c.MFA_KEY) : null],
+          [hash, retryHash, retryHash ? encrypt(refresh, replacementKey) : null],
         );
         await tx.query(
           "INSERT INTO refresh_tokens(hash,session_id) VALUES ($1,$2)",
@@ -478,19 +512,13 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           "INSERT INTO password_resets(hash,user_id,expires_at) VALUES ($1,$2,now()+interval '15 minutes')",
           [digest(token), u.id],
         );
-        // Delivery failure cannot reveal account existence. The mailer emits sanitized operational logs.
-        try {
-          await mail(u.email, token);
-        } catch {
-          await audit(
-            db,
-            req,
-            "RESET_DELIVERY_FAILURE",
-            "auth",
-            undefined,
-            "FAILURE",
-          );
-        }
+        // Delivery starts now but is not awaited: SMTP latency must not reveal
+        // whether the account exists. Failures are audited; the mailer logs them.
+        void mail(u.email, token).catch(() =>
+          audit(db, req, "RESET_DELIVERY_FAILURE", "auth", undefined, "FAILURE").catch(
+            () => undefined,
+          ),
+        );
       }
       res.json({
         message:

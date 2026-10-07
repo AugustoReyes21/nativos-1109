@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { database } from "./db.js";
 import { createApp, logger } from "./app.js";
 import { diagnostic } from "./diagnostics.js";
+import { purge } from "./maintenance.js";
 loadEnv();
 const c = config();
 const db = database(c);
@@ -47,12 +48,21 @@ const { app, closeStreams } = createApp(db, c, async (email, token) => {
 const server = app.listen(c.PORT, "0.0.0.0", () =>
   logger.info({ port: c.PORT }, "server_started"),
 );
+// Hourly retention of auxiliary tables; failures are logged and retried next hour.
+const maintain = () =>
+  purge(db)
+    .then((removed) => logger.info({ removed }, "maintenance_purge"))
+    .catch((error: unknown) => logger.error(diagnostic(error), "maintenance_failed"));
+void maintain();
+const maintenance = setInterval(() => void maintain(), 3600000);
+maintenance.unref();
 server.requestTimeout = 15000;
 server.headersTimeout = 20000;
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  clearInterval(maintenance);
   closeStreams();
   const deadline = setTimeout(() => process.exit(1), 10000);
   deadline.unref();

@@ -40,8 +40,8 @@ jobs:
       - run: npm run test:integration
       - run: npm run build
       - run: npm audit --audit-level=moderate
-      - name: Scan complete Git history
-        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.3 git /repo --redact --no-banner
+      - name: Scan complete Git history (gitleaks v8.24.3, pinned by digest)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055 git /repo --redact --no-banner
       - name: Create isolated E2E database
         run: PGPASSWORD=ci_only psql -h localhost -U nativos -d postgres -c 'CREATE DATABASE nativos_e2e_test'
       - run: npx playwright install --with-deps chromium

@@ -46,3 +46,9 @@ F11/F14/F16 prolongado/F19 y trabajo funcional pendiente están documentados. Se
 # Actualización Codex — gate SAST y CSRF
 
 CI remoto ya funciona. La primera ejecución verde omitió severidades de reglas CodeQL en SARIF extensions: corregido con regresiones fail-closed, sin excluir hallazgos. Se agregan capa pre-DB de ráfaga y tokens CSRF firmados ligados a credencial. Coordinación avisada en issue #1 antes de publicar. En la suite adversarial de Claude se adapta solo el helper HTTP y replay de refresh al contrato CSRF; se conservan las aserciones. Revisión final sigue pendiente, PR #2 sigue borrador. 80 tests locales pasan; evidencia remota final se publicará en el PR.
+
+## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)
+
+Rama `claude/review/pr2-round2` (PR #3 → rama de Codex). Por instrucción del propietario, Claude corrigió: R2-01 (topes de login antes de Argon2 + tope por cuenta con `TRUSTED_LOGIN_IPS`), R2-04 (integración = todo menos unitarias; gitleaks por digest; `forbidOnly`), R2-05 (migración 004 `paid_at` + índice parcial: 370 ms → 2 ms con 200k órdenes), R2-07 (ventana de refresh de 5 min), R2-08 (subclave HKDF), F07 (detalles de movimientos y creación de orden), F11 (envío SMTP sin esperar), F12 (prueba MFA con desafío real), F14 (retención horaria). R2-03: Render queda en free solo para pruebas; ver “Paso a producción” en DEPLOYMENT.md. `main` protegida por decisión del propietario.
+
+Codex: los archivos anunciados en el PR #2 quedan liberados al fusionar #3. Abiertos: R2-06 (cierre de órdenes entregadas sin pagar, requiere política), F16 (prueba SSE de jornada), F19, E2E faltantes.

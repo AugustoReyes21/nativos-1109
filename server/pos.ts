@@ -241,16 +241,22 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       me.permissions.includes("orders.create") &&
       !me.permissions.includes("payments.create");
     const result = await db.query(
-      `SELECT o.*,t.name AS table_name,u.name AS waiter,
+      // Each branch is index-backed; a single OR forced a scan of the full history.
+      `WITH visible AS (
+        SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND status IN ('PENDIENTE','EN_PREPARACION','LISTO')
+        UNION
+        SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND paid_at IS NULL AND status<>'CANCELADO'
+        UNION
+        (SELECT id FROM orders WHERE ($1::uuid IS NULL OR user_id=$1)
+          AND status IN ('ENTREGADO','CANCELADO') AND created_at>now()-interval '24 hours'
+          ORDER BY created_at DESC LIMIT 200))
+      SELECT o.*,t.name AS table_name,u.name AS waiter,
       (SELECT json_agg(i ORDER BY i.name) FROM order_items i WHERE i.order_id=o.id) AS items,
-      EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id) AS paid
-      FROM orders o JOIN restaurant_tables t ON t.id=o.table_id JOIN users u ON u.id=o.user_id
-      WHERE ($1::uuid IS NULL OR o.user_id=$1) AND (
-        o.status IN ('PENDIENTE','EN_PREPARACION','LISTO')
-        OR (o.status<>'CANCELADO' AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id))
-        OR o.id IN (SELECT h.id FROM orders h WHERE ($1::uuid IS NULL OR h.user_id=$1)
-          AND h.status IN ('ENTREGADO','CANCELADO') AND h.created_at>now()-interval '24 hours'
-          ORDER BY h.created_at DESC LIMIT 200))
+      o.paid_at IS NOT NULL AS paid
+      FROM visible v JOIN orders o ON o.id=v.id
+      JOIN restaurant_tables t ON t.id=o.table_id JOIN users u ON u.id=o.user_id
       ORDER BY o.created_at`,
       [ownOnly ? me.id : null],
     );
@@ -312,7 +318,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             ],
           );
         }
-        await audit(tx, req, "ORDER_CREATED", "orders", order.id);
+        await audit(tx, req, "ORDER_CREATED", "orders", order.id, "SUCCESS", undefined, {
+          tableId: input.tableId,
+          totalCents: order.total_cents,
+          items: items.length,
+        });
         await changed(tx);
         return order;
       }),
@@ -455,7 +465,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             [s.id, identity(req).id, input.amountCents, input.reason],
           )
         ).rows[0]!;
-        await audit(tx, req, "CASH_MOVEMENT_CREATED", "cash_movements", r.id);
+        await audit(tx, req, "CASH_MOVEMENT_CREATED", "cash_movements", r.id, "SUCCESS", undefined, {
+          shiftId: s.id,
+          amountCents: input.amountCents,
+          reason: input.reason,
+        });
         await changed(tx);
         return r;
       }),
