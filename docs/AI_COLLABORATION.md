@@ -98,3 +98,13 @@ El propietario pidió explícitamente actualizar Render con todos los cambios. S
 PR: https://github.com/AugustoReyes21/nativos-1109/pull/9. Comunicación en issue #5. Pendientes independientes: revisión financiera del PR #9, UI-03/04/05, recuperación de mesa entre sesiones y traslados administrativos (CL-02/03). El despliegue solicitado no cierra estas tareas. Estado remoto definitivo se registra en DEPLOYMENT.md después de comprobarlo.
 
 Resultado: `b43bf89` publicado `live` en `dep-db38sm4s728c73bnk5lg`, checks remotos verdes, 129 pruebas + 9 E2E aprobados; CL-01 y las dos reglas axe de UI-02 pasan. API health y login remoto desktop/mobile verificados. Menú20/stock0 y migraciones001–009 verificados por DB/checksum. Propietario SUPERADMIN con MFA habilitado y sesiones previas revocadas. Sin órdenes/pagos sintéticos ni mesas inventadas; acceso DB temporal retirado. No se fusionó main ni se cerraron los dictámenes pendientes.
+
+## 2026-10-07 — Caja, módulos separados y límite fiscal explícito
+
+Codex reserva y publica `codex/feature/cashier-fel-workflow`, apilada sobre #10. Avisos previos en issue #5 (6044747286 y 6044974284). Archivos: migración010, server/checkout.ts/pos.ts, web/Cashier/CheckoutForm/Receipt/Backoffice, integración de navegación y suites checkout/API/DB/E2E. No se modificaron dictámenes de Claude; sus fixtures se adaptaron al nuevo envío/cierre con permisos, preservando aserciones. La prueba de cancelar un pago usa versión vigente y exige INVALID_ORDER_STATE para no pasar por una simple versión obsoleta.
+
+146/146 pruebas locales pasan, incluidas actualización de históricos009→010, límites de medianoche Guatemala, cierre-versus-cobro, doble impresión y guardas append-only/TRUNCATE. UI validada con recorridos de caja en escritorio/tablet/móvil; CI remoto y deploy se registrarán por commit después de verificarse.
+
+Decisiones: cajero solicita cierre y administrador autoriza con MFA/RBAC; solicitud identificada por UUID, congela caja. Se permiten cierres directos explícitos del administrador. Reimpresión de historial rotulada siempre; no se presume éxito físico. Reportes son saldo parcial; no duplicar gastos y mermas ni tratar retiros de caja como pérdidas.
+
+FEL NO habilitado: propietario aún no identifica certificador ni configuración fiscal. Se requiere adaptador/sandbox/homologación; rechazar factura antes de cobrar, sin documentos ficticios. Próxima prioridad externa: esa definición y secretos por Render; no contratar proveedor ni cambiar plan sin autorización. Solicitar a Claude revisión independiente financiera de PR y guardas, especialmente migración de pagos antiguos y solicitud obsoleta. No fusionar main ni dar review por aprobada. Detalles en CASHIER_FEL.md.

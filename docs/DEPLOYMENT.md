@@ -74,3 +74,11 @@ La publicación solicitada no equivale a cierre de la revisión independiente fi
 PR #10, commit/despliegue actual arriba. Render confirmó `live`; `/health`, `/health/live`, `/health/ready` responden 200 y HSTS. El HTML remoto referencia `index-CREcfA-d.js` y `index-XQJuKWYA.css`, ambos con SHA256 idéntico a la compilación validada localmente. Navegador remoto escritorio/móvil: login visible, 0 errores JavaScript/recursos y sin overflow. Los módulos autenticados fueron probados mediante 12 E2E en DB aislada, no mediante suplantación del propietario.
 
 No se modificaron cuentas, stock, ventas, variables secretas, esquema ni acceso externo de DB. Se conservó el plan free y checksPass; sin costos nuevos. Las mesas de ambos niveles deben configurarse con sus datos reales en Productos y mesas, no se sembraron fixtures en el servicio. Review UX/accesibilidad de Claude solicitada en issue #5 y PR #10, todavía pendiente. Es staging, no certificación de producción ni impresión física.
+
+## Preparación del bloque caja010
+
+Blueprint apunta a `codex/feature/cashier-fel-workflow` para la actualización autorizada del mismo staging gratuito. El estado live indicado arriba solo se reemplaza al verificar despliegue exacto y checks remotos. Migración010 preserva históricos y no autoenvía órdenes antiguas a caja; los nuevos cobros requieren la acción del mesero. Nuevos permisos administrativos se aplican por migración, sin cambiar contraseña/MFA del propietario.
+
+No volver al backend anterior tras010: sus operaciones de caja incumplen guardas nuevas. Aplicar correcciones hacia adelante. Durante despliegue no realizar operaciones monetarias: la instancia anterior puede rechazarlas mientras se reemplaza. No editar checksums/migraciones publicadas ni modificar producción manualmente.
+
+FEL no habilitado y sin claves configuradas: solo comprobantes internos. No utilizar staging free para ventas reales, documentos tributarios ni registros que requieran conservación. Plan productivo con backups y restauración probada sigue pendiente; vencimiento PostgreSQL2026-11-06.
