@@ -49,3 +49,34 @@ D3 (posiciones x/y y modo “Editar plano”) y D6 (desactivar o reactivar mesas
 ## Pruebas aportadas
 - `tests/security/floors.test.ts` (7 pruebas, todas pasan sobre `c2444a9`).
 - Las capturas y el script de axe se ejecutaron localmente (no se versionan). Se recomienda incorporar `@axe-core/playwright` al E2E como criterio permanente.
+
+## Actualización — bloqueo de mesas (`b5a943b`, `f5e4a88`)
+
+Requisito del propietario: una mesa seleccionada por un mesero no puede ser seleccionada por otro, aunque aún no haya orden. Implementado por Codex (migración 007, `server/table-claims.ts`, `docs/TABLE_CLAIMS.md`). UI-01 queda **resuelto**, salvo el hallazgo CL-01.
+
+Verificación independiente con `tests/security/table-claims-review.test.ts` (10 pruebas, 4 ejecuciones estables):
+
+| Escenario | Resultado |
+| --- | --- |
+| 10 selecciones simultáneas de dos meseros sobre la misma mesa | ✅ solo un mesero gana; el otro recibe 409 |
+| Dos pedidos directos simultáneos, sin selección previa | ✅ un 201 y un 409; nunca dos dueños (antes la mesa se tomaba con `FOR SHARE`; ahora `FOR UPDATE`) |
+| Selección contra pedido directo de otro mesero en carrera | ✅ nunca pasan ambos |
+| El perdedor no puede pedir antes ni después del pedido del dueño; el stock no se toca | ✅ |
+| Reserva vencida: renovación, liberación y pedido tardíos del dueño anterior no afectan al nuevo | ✅ |
+| Pedido con reserva vencida | ✅ 409 `TABLE_CLAIM_EXPIRED` sin escribir nada |
+| Logout y desactivación administrativa liberan la mesa al instante | ✅ |
+| Cocina y cajero no pueden seleccionar; mesa inexistente o inactiva → 400 | ✅ |
+| Otro mesero no conoce dueño, `claimId` ni contenido | ✅ |
+| **Un mesero reserva las 12 mesas a la vez** | ❌ **CL-01** |
+
+Suite completa sobre `f5e4a88` + mis pruebas: 119/120 (solo CL-01); E2E 6/6 (desktop, tablet, mobile).
+
+### CL-01 MAJOR — Acaparamiento: una cuenta puede bloquear todo el salón
+No hay límite de reservas simultáneas por sesión: un mesero (cuenta comprometida, error de uso o mala fe) reservó las 12 mesas en paralelo y, renovándolas, deja al resto del personal sin poder atender. Hoy la única salida es que el administrador desactive al usuario.
+Corrección propuesta: máximo de reservas **sin orden** vigentes por sesión (p. ej. 2) → 409 `TABLE_CLAIM_LIMIT`; las mesas con órdenes propias abiertas no cuentan. La prueba acepta cualquier tope menor que el total de mesas.
+
+### CL-02 MINOR — El mismo mesero en otra tablet queda bloqueado hasta 5 min
+La reserva se liga a la sesión: si la tablet de un mesero se apaga, en otro dispositivo tampoco puede tomar *su propia* mesa hasta que venza. Sugerencia: permitir que el mismo usuario recupere su reserva desde otra sesión con confirmación explícita y auditoría.
+
+### CL-03 Pendiente (ya señalado por Codex) — desbloqueo y traslado administrativos
+Sin traslado de mesas entre meseros ni desbloqueo auditado, un fin de turno con órdenes abiertas deja la mesa bloqueada para los demás hasta que se cobre. Necesario antes de producción.
