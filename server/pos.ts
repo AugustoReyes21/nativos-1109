@@ -34,6 +34,15 @@ type Shift = {
   closed_at: Date | null;
 };
 const name = z.string().trim().min(1).max(100);
+const tableSchema = z
+  .object({
+    name,
+    floor: z.number().int().min(1).max(2).default(1),
+    capacity: z.number().int().min(1).max(12).default(4),
+    shape: z.enum(["square", "round", "rectangle"]).default("square"),
+    displayOrder: z.number().int().min(0).max(999).default(0),
+  })
+  .strict();
 const cents = z.number().int().min(0).max(1000000000);
 const itemsSchema = z
   .array(
@@ -94,7 +103,9 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     const [products, categories, tables] = await Promise.all([
       db.query("SELECT * FROM products ORDER BY name"),
       db.query("SELECT * FROM categories ORDER BY name"),
-      db.query("SELECT * FROM restaurant_tables WHERE active ORDER BY name"),
+      db.query(
+        "SELECT * FROM restaurant_tables WHERE active ORDER BY floor,display_order,name",
+      ),
     ]);
     res.json({
       products: products.rows,
@@ -121,8 +132,8 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     });
     res.json({ ok: true });
   });
-  for (const kind of ["categories", "tables"] as const) {
-    const table = kind === "categories" ? "categories" : "restaurant_tables";
+  for (const kind of ["categories"] as const) {
+    const table = "categories";
     app.post(
       `/api/${kind}`,
       p(kind === "categories" ? "products.write" : "settings.manage"),
@@ -146,6 +157,81 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       },
     );
   }
+  app.post("/api/tables", p("settings.manage"), async (req, res) => {
+    const input = tableSchema.parse(req.body);
+    const result = await transaction(db, (tx) =>
+      idempotent(tx, req, "create-tables", input, async () => {
+        const r = (
+          await tx.query(
+            `INSERT INTO restaurant_tables(name,floor,capacity,shape,display_order)
+        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+            [
+              input.name,
+              input.floor,
+              input.capacity,
+              input.shape,
+              input.displayOrder,
+            ],
+          )
+        ).rows[0] as { id: string };
+        await audit(
+          tx,
+          req,
+          "TABLE_CREATED",
+          "tables",
+          r.id,
+          "SUCCESS",
+          undefined,
+          input,
+        );
+        await changed(tx);
+        return r;
+      }),
+    );
+    res.status(201).json(result);
+  });
+  app.patch("/api/tables/:id", p("settings.manage"), async (req, res) => {
+    const id = idSchema.parse(req.params.id);
+    const input = tableSchema
+      .extend({ version: z.number().int().positive() })
+      .parse(req.body);
+    const result = await transaction(db, (tx) =>
+      idempotent(tx, req, "update-table:" + id, input, async () => {
+        const r = await tx.query(
+          `UPDATE restaurant_tables SET name=$1,floor=$2,capacity=$3,shape=$4,
+        display_order=$5,version=version+1 WHERE id=$6 AND version=$7 AND active RETURNING *`,
+          [
+            input.name,
+            input.floor,
+            input.capacity,
+            input.shape,
+            input.displayOrder,
+            id,
+            input.version,
+          ],
+        );
+        if (!r.rowCount)
+          fail(
+            409,
+            "TABLE_CHANGED",
+            "La mesa cambió. Actualiza antes de guardar",
+          );
+        await audit(
+          tx,
+          req,
+          "TABLE_UPDATED",
+          "tables",
+          id,
+          "SUCCESS",
+          undefined,
+          input,
+        );
+        await changed(tx);
+        return r.rows[0];
+      }),
+    );
+    res.json(result);
+  });
   app.post("/api/products", p("products.write"), async (req, res) => {
     const input = z
       .object({
