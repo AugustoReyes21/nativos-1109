@@ -57,3 +57,6 @@ Elegir plan sin suspensión y PostgreSQL persistente con backups/PITR adecuados.
 Ensayar backup cifrado y restauración de usuarios, MFA, órdenes y pagos; custodiar MFA_KEY fuera de DB para poder descifrar tras restauración. No restaurar datos sobre producción sin plan. Rollback de aplicación solo si esquema conserva compatibilidad; correcciones de schema mediante nueva migración, no modificar checksums anteriores.
 
 Referencias: [Blueprint](https://render.com/docs/blueprint-spec), [Health checks](https://render.com/docs/health-checks), [Deploys y CI](https://render.com/docs/deploys).
+# Próximo bloque: menú, propietario y cortesías
+
+La rama `codex/feature/menu-superadmin-courtesies` contiene 008/009 y el comando `promote-owner`; **no se ha desplegado este bloque ni se ha ejecutado la promoción remota**. Esperar CI y revisión independiente. Tras desplegar API/UI compatibles y verificar health/migraciones, ejecutar la promoción documentada en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md) para el correo confirmado. Verificar rol, revocación de sesiones y auditoría sin exponer datos sensibles. Mantener stock 0; el administrador registra existencias reales. No volver al auth antiguo después de promover SUPERADMIN.

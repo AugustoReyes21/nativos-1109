@@ -74,3 +74,8 @@ CodeQL se verifica por alertas individuales y por gate local del SARIF. Un job v
 # Validación de publicación — 2026-10-07
 
 Commit 169d9d3: 85 pruebas únicas (`npm test` descubre todas las suites) y 3 E2E desktop/tablet/mobile pasan. CI remoto 37651290538, ZAP 37651290459 exitosos. Gitleaks conserva escaneo completo con una única excepción histórica revisada de fixture TOTP, documentada en SECURITY.md; ninguna credencial real fue incluida. Render publicó ese commit tras gates verdes. Smoke remoto: HTTPS, `/`, `/health/live`, `/health/ready` 200; administrador no recibe sesión antes de enrollment MFA; correo de configuración aceptado por SMTP, recepción en inbox no verificada. No se ejecutó carga ni se crearon ventas ficticias en la base desplegada.
+# Menú, superadmin y cortesías — 2026-10-07
+
+Validación local del bloque: **111/111 pruebas** en 10 suites y **9/9 E2E** (Chromium, escritorio/tablet/móvil). Incluye 8 nuevas pruebas API/DB de catálogo, stock 0, promoción y permisos/MFA, cortesías netas, idempotencia/concurrencia e invariantes directas PostgreSQL; tres nuevas ejecuciones E2E del recorrido superadmin → stock real → orden → cortesía parcial/total → comprobante/registro/caja. Se conservan los seis recorridos POS/reconexión/exclusión de mesas anteriores.
+
+La primera ejecución E2E detectó un selector incorrecto: `getByLabel` incluía el texto de opciones del rol. Se corrigió a `getByRole('combobox')`; la aserción de SUPERADMIN se conserva. Se repitió la suite completa con resultado 9/9. Lint, typecheck y build pasan. Resultados remotos de CI y revisión independiente se registrarán en el PR; esto no prueba despliegue en Render, Safari real, fiscalidad ni impresión física.

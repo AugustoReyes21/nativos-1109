@@ -83,3 +83,10 @@ Pendientes relevantes: SMTP real y eliminar canal temporal en forgot-password (o
 **MEDIUM / P1 — defensa CSRF reforzada:** Origin exacto + JSON + custom header ya bloqueaban solicitudes cross-site simples, pero se agrega double-submit firmado y ligado a credencial con csrf-csrf. Pruebas rechazan tokens ausentes/forjados, cookie/header iguales sin HMAC válido, intercambio entre navegadores y uso posterior a login; cookie JSON malformada no produce 500. Las aserciones de concurrencia/refresh de Claude se conservan, adaptando solo transporte CSRF.
 
 Validación local del bloque: lint/typecheck/build, 80 pruebas unitarias/API/DB. E2E y CodeQL/ZAP se reejecutan sobre el commit final; consultar PR #2 para evidencia final. Las cifras de carga previas corresponden al protocolo anterior a este refuerzo y no deben presentarse como medida del commit final.
+# Bloque menú / superadmin / cortesías — 2026-10-07
+
+- **HIGH / P1**: MFA comparaba literalmente ADMINISTRADOR; añadir SUPERADMIN sin extender ese control permitiría omitir MFA. Corregido en rama mediante `roles.requires_mfa` en login, sesión, refresh y desactivación. No se promocionan cuentas durante la migración de un despliegue gradual.
+- **HIGH / P1**: nuevo permiso de elevación necesario para evitar que administrador ordinario asigne/modifique SUPERADMIN. Agregado guard backend y pruebas 403.
+- **HIGH / P1**: regalar mediante precio cero o registrar efectivo ficticio rompería conciliación. Implementado ledger por unidades con importes históricos calculados por SQL, transacciones, idempotencia y cobros netos. Pruebas de concurrencia e invariantes directas.
+- **MEDIUM / P2**: faltaba menú real. Importados los 20 productos del PDF, con stock 0 confirmado por el propietario; pendientes revisión/publicación remota y cantidades reales de jornada.
+- **MEDIUM / P4, pendiente**: PR #8 de Claude identifica contraste/nombres accesibles del plano y transiciones mejorables; no se declara resuelto en este bloque financiero.
