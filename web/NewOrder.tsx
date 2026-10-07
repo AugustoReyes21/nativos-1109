@@ -5,11 +5,15 @@ import type { TableStatus } from "./table-state";
 import { tableStateLabels } from "./table-state";
 export type OrderDraft = {
   tableId: string;
+  claimId: string | null;
+  claimExpiresAt: string | null;
   items: { productId: string; quantity: number; notes: string }[];
   notes: string;
 };
 export const emptyDraft = (): OrderDraft => ({
   tableId: "",
+  claimId: null,
+  claimExpiresAt: null,
   items: [],
   notes: "",
 });
@@ -26,6 +30,8 @@ export function NewOrder({
   status,
   back,
   viewOrders,
+  statuses,
+  discard,
 }: {
   catalog: Catalog;
   busy: boolean;
@@ -39,8 +45,14 @@ export function NewOrder({
   status?: TableStatus;
   back: () => void;
   viewOrders: () => void;
+  statuses: TableStatus[];
+  discard: () => void;
 }) {
   const { tableId, items, notes } = draft;
+  const reserved =
+    !!draft.claimId &&
+    !!draft.claimExpiresAt &&
+    new Date(draft.claimExpiresAt).getTime() > Date.now();
   const setItems = (update: SetStateAction<OrderDraft["items"]>) =>
     setDraft((old) => ({
       ...old,
@@ -179,6 +191,22 @@ export function NewOrder({
         <section className="cart" id="current-order" aria-label="Pedido actual">
           <p className="eyebrow">A COCINA, CON PRECISIÓN</p>
           <h2>Pedido actual</h2>
+          {tableId && (
+            <div className="claim-notice" role="status">
+              {reserved
+                ? "Mesa reservada para ti mientras preparas el pedido."
+                : "La mesa ya no está reservada. Conservamos tus productos."}
+              {!reserved && (
+                <button
+                  className="secondary"
+                  disabled={busy || !connected}
+                  onClick={() => changeTable(tableId)}
+                >
+                  Reservar nuevamente
+                </button>
+              )}
+            </div>
+          )}
           <label>
             Mesa
             <select
@@ -188,7 +216,13 @@ export function NewOrder({
             >
               <option value="">Selecciona una mesa</option>
               {catalog.tables.map((t) => (
-                <option key={t.id} value={t.id}>
+                <option
+                  key={t.id}
+                  value={t.id}
+                  disabled={
+                    statuses.find((s) => s.tableId === t.id)?.blocked ?? true
+                  }
+                >
                   {t.name} · Nivel {t.floor}
                 </option>
               ))}
@@ -275,11 +309,21 @@ export function NewOrder({
           </div>
           <button
             disabled={
-              busy || !connected || !tableId || !items.length || invalidQuantity
+              busy ||
+              !connected ||
+              !tableId ||
+              !reserved ||
+              !items.length ||
+              invalidQuantity
             }
             onClick={() =>
               void run(async () => {
-                await mutate("/orders", { tableId, items, notes });
+                await mutate("/orders", {
+                  tableId,
+                  items,
+                  notes,
+                  claimId: draft.claimId,
+                });
                 setDraft(emptyDraft());
                 await done();
               })
@@ -287,6 +331,15 @@ export function NewOrder({
           >
             {busy ? "Enviando…" : "Confirmar y enviar a cocina"}
           </button>
+          {(tableId || items.length > 0) && (
+            <button
+              className="secondary"
+              disabled={busy || !connected}
+              onClick={discard}
+            >
+              Descartar borrador y liberar mesa
+            </button>
+          )}
           {invalidQuantity && (
             <p role="status" className="quantity-warning">
               Revisa las cantidades: deben ser positivas y no superar la

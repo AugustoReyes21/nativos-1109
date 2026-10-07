@@ -1,6 +1,8 @@
-export type TableState = "available" | "service" | "ready" | "payment";
+export type TableState =
+  "available" | "reserved" | "service" | "ready" | "payment";
 export const tableStateLabels: Record<TableState, string> = {
   available: "Disponible",
+  reserved: "Reservada",
   service: "En servicio",
   ready: "Para servir",
   payment: "Por cobrar",
@@ -13,4 +15,7 @@ export type TableStatus = {
   since: string | null;
   mine: boolean;
   pendingCents?: number;
+  blocked: boolean;
+  claimId: string | null;
+  claimExpiresAt: string | null;
 };

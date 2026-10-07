@@ -199,10 +199,12 @@ export function FloorPlan({
               <motion.button
                 key={table.id}
                 className={`table-card ${state ?? "unknown"}`}
-                disabled={busy || !connected || !status}
+                disabled={
+                  busy || !connected || !status || (canCreate && status.blocked)
+                }
                 whileTap={reduced ? undefined : { scale: 0.98 }}
                 onClick={() => select(table)}
-                aria-label={`${table.name}, nivel ${table.floor}, ${label}, ${status?.openOrders ?? 0} órdenes. ${canCreate ? "Crear orden" : "Ver órdenes"}`}
+                aria-label={`${table.name}, nivel ${table.floor}, ${label}, ${status?.openOrders ?? 0} órdenes. ${canCreate && status?.blocked ? "No disponible para seleccionar" : canCreate ? "Crear orden" : "Ver órdenes"}`}
               >
                 <span className={`table-state ${state ?? ""}`}>
                   <span />
@@ -217,13 +219,17 @@ export function FloorPlan({
                     : ""}
                 </span>
                 <span className="table-card-footer">
-                  {status?.pendingCents
-                    ? money(status.pendingCents)
-                    : status?.mine
-                      ? "Tienes una orden aquí"
-                      : canCreate
-                        ? "Abrir pedido"
-                        : "Ver servicio"}
+                  {canCreate && status?.blocked
+                    ? "Otro mesero atiende aquí"
+                    : status?.claimId
+                      ? "Reservada para ti"
+                      : status?.pendingCents
+                        ? money(status.pendingCents)
+                        : status?.mine
+                          ? "Tienes una orden aquí"
+                          : canCreate
+                            ? "Abrir pedido"
+                            : "Ver servicio"}
                   <Icon name="arrow" />
                 </span>
               </motion.button>
@@ -251,7 +257,8 @@ export function FloorPlan({
         <div className="floor-footnote">
           <span>Mapa operativo · Distribución automática</span>
           <span>
-            El estado refleja órdenes, no reservas ni ocupación física.
+            Selección exclusiva por mesero · No representa reservas de
+            comensales.
           </span>
         </div>
       </div>

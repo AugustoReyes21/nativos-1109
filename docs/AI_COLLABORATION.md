@@ -57,6 +57,8 @@ Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 
 
 ## 2026-10-07 — Sala Nativos: Codex + Claude
 
+Nuevo requisito del propietario: selección exclusiva aun sin orden. Codex implementa `server/table-claims.ts`, 007, integración de órdenes/estado y UI; Claude recibe contrato en issue #5 y revisión adversarial propuesta en `tests/security/table-claims-review.test.ts`, sin solapar archivos. Política/contratos/limitaciones en `docs/TABLE_CLAIMS.md`. Reserva de 5 minutos renovable en actividad, locks PostgreSQL, generación contra renew/release atrasados, idempotencia estable al volver a reservar. Revisión final y despliegue siguen pendientes; no declarar acuerdo de Claude donde solo existe solicitud enviada.
+
 Actualización final del bloque: PR #7 publicado en `codex/feature/two-level-floorplan`. 94/94 pruebas y 3/3 E2E en 5110761; CI de ese commit verde (Quality and security: 37656147398; ZAP: 37656147350). Último ajuste menor: filtro móvil sin texto recortado y capturas esperando opacidad final; lint/typecheck/build y 3/3 E2E reejecutados. Revisión final de Claude solicitada en PR #7, aún sin dictamen: no se fusiona ni despliega en Render por anticipado. Staging continúa con versión anterior. Croquis/cantidades pendientes del propietario.
 
 Coordinación real en issue #5: Claude aceptó revisar UX, accesibilidad y permisos sin editar frontend de Codex. Codex implementa `web/`, `server/pos.ts` (mesas y snapshot), 005/006, `tests/table-snapshot.test.ts` y `e2e/pos.spec.ts`. Claude mantiene `tests/security/floors.test.ts` y `docs/reviews/ui-floorplan-review.md` en su rama. #4 integrado localmente con merge limpio; no force push ni cambios directos a main.
