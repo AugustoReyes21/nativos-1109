@@ -9,7 +9,15 @@ import { Icon, type IconName } from "./Icon";
 import type { TableStatus } from "./table-state";
 import { MotionConfig } from "motion/react";
 import { Orders } from "./Orders";
-import { AdminView, CashView, CatalogView } from "./Management";
+import { CatalogView } from "./Management";
+import { Cashier } from "./Cashier";
+import {
+  UsersView,
+  AuditView,
+  CourtesiesView,
+  SalesView,
+  FinanceView,
+} from "./Backoffice";
 import {
   human,
   type Catalog,
@@ -27,7 +35,11 @@ const moduleNames: Record<string, string> = {
   ordenes: "Órdenes",
   catalogo: "Productos y mesas",
   caja: "Caja",
-  admin: "Administración",
+  admin: "Usuarios",
+  bitacora: "Bitácora",
+  ventas: "Historial de ventas",
+  reportes: "Reportes financieros",
+  cortesias: "Cortesías",
   seguridad: "Mi seguridad",
 };
 
@@ -504,7 +516,11 @@ function App() {
         {tab("nueva", "Nueva orden", can("orders.create"))}
         {tab("catalogo", "Productos y mesas", can("products.write"))}
         {tab("caja", "Caja", can("cash.read"))}
-        {tab("admin", "Administración", can("users.manage"))}
+        {tab("ventas", "Historial de ventas", can("payments.create"))}
+        {tab("admin", "Usuarios", can("users.manage"))}
+        {tab("bitacora", "Bitácora", can("audit.read"))}
+        {tab("reportes", "Reportes financieros", can("reports.read"))}
+        {tab("cortesias", "Cortesías", can("reports.read"))}
         {tab("seguridad", "Mi seguridad")}
         <div className="nav-signature">
           <span>N / 1109</span>
@@ -564,7 +580,9 @@ function App() {
               run={run}
               mutate={mutate}
               reload={reload}
-              cashOpen={cash.some((s) => !s.closed_at)}
+              cashOpen={cash.some(
+                (s) => !s.closed_at && !s.closure_requested_at,
+              )}
             />
           )}
           {view === "nueva" && (
@@ -602,8 +620,11 @@ function App() {
             />
           )}
           {view === "caja" && (
-            <CashView
+            <Cashier
               cash={cash}
+              orders={orders}
+              can={can}
+              connected={connected}
               busy={busy || !connected}
               run={run}
               mutate={mutate}
@@ -611,11 +632,27 @@ function App() {
             />
           )}
           {view === "admin" && (
-            <AdminView
+            <UsersView
               busy={busy || !connected}
               run={run}
-              reload={reload}
               canManageSuper={can("roles.superadmin.manage")}
+            />
+          )}
+          {view === "ventas" && (
+            <SalesView busy={busy || !connected} run={run} mutate={mutate} />
+          )}
+          {view === "bitacora" && (
+            <AuditView busy={busy || !connected} run={run} />
+          )}
+          {view === "cortesias" && (
+            <CourtesiesView busy={busy || !connected} run={run} />
+          )}
+          {view === "reportes" && (
+            <FinanceView
+              busy={busy || !connected}
+              run={run}
+              mutate={mutate}
+              canWrite={can("finance.write")}
             />
           )}
           {view === "seguridad" && (

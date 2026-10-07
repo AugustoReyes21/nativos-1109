@@ -1,13 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { api, money, toCents } from "./api";
-import type {
-  Action,
-  Catalog,
-  DiningTable,
-  Mutate,
-  Shift,
-  User,
-} from "./types";
+import { type FormEvent } from "react";
+import { money, toCents } from "./api";
+import type { Action, Catalog, DiningTable, Mutate, Shift } from "./types";
 import { TableDrawing } from "./FloorPlan";
 function TableFields({ table }: { table?: DiningTable }) {
   return (
@@ -296,7 +289,8 @@ export function CashView({
   run,
   mutate,
   reload,
-}: Omit<Props, "catalog"> & { cash: Shift[] }) {
+  canApprove,
+}: Omit<Props, "catalog"> & { cash: Shift[]; canApprove: boolean }) {
   const open = cash.find((s) => !s.closed_at);
   return (
     <>
@@ -333,29 +327,84 @@ export function CashView({
               <form
                 onSubmit={(e) =>
                   formAction(e, run, reload, async (f) => {
-                    await mutate("/cash/close", {
-                      shiftId: open.id,
-                      countedCents: toCents(f.get("amount")),
-                    });
+                    await mutate(
+                      canApprove ? "/cash/close" : "/cash/close-request",
+                      {
+                        shiftId: open.id,
+                        ...(canApprove && open.closure_request_id
+                          ? { requestId: open.closure_request_id }
+                          : {}),
+                        countedCents: toCents(f.get("amount")),
+                      },
+                    );
                   })
                 }
               >
                 <label>
                   Efectivo contado (Q)
                   <input
+                    key={open.closure_request_id ?? open.id}
                     name="amount"
                     type="number"
                     min="0"
                     step="0.01"
                     required
+                    readOnly={!!open.closure_requested_at}
+                    defaultValue={
+                      open.closure_counted_cents === null
+                        ? ""
+                        : (open.closure_counted_cents / 100).toFixed(2)
+                    }
                   />
                 </label>
-                <button disabled={busy}>Cerrar caja</button>
+                <button
+                  disabled={
+                    busy || (!!open.closure_requested_at && !canApprove)
+                  }
+                >
+                  {canApprove
+                    ? "Autorizar y cerrar caja"
+                    : "Solicitar autorización de cierre"}
+                </button>
               </form>
+              {open.closure_requested_at && (
+                <div role="status">
+                  <p>
+                    Cierre pendiente de autorización administrativa. Los cobros
+                    y movimientos están suspendidos.
+                  </p>
+                  {canApprove && (
+                    <form
+                      onSubmit={(e) =>
+                        formAction(e, run, reload, async (f) => {
+                          await mutate("/cash/reject-close", {
+                            shiftId: open.id,
+                            requestId: open.closure_request_id,
+                            reason: f.get("reason"),
+                          });
+                        })
+                      }
+                    >
+                      <label>
+                        Motivo de rechazo
+                        <input
+                          name="reason"
+                          minLength={3}
+                          maxLength={300}
+                          required
+                        />
+                      </label>
+                      <button disabled={busy}>
+                        Rechazar cierre y reabrir operaciones
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
             </>
           )}
         </section>
-        {open && (
+        {open && !open.closure_requested_at && (
           <section className="panel">
             <h2>Movimiento de efectivo</h2>
             <form
@@ -404,160 +453,6 @@ export function CashView({
             {money(s.difference_cents ?? 0)}
           </p>
         ))}
-    </>
-  );
-}
-export function AdminView({
-  busy,
-  run,
-  reload,
-  canManageSuper,
-}: Omit<Props, "catalog" | "mutate"> & { canManageSuper: boolean }) {
-  const [users, setUsers] = useState<User[]>([]);
-  const [report, setReport] = useState<
-    { day: string; method: string; total_cents: string; sales: string }[]
-  >([]);
-  const [audit, setAudit] = useState<
-    { id: string; action: string; created_at: string; result: string }[]
-  >([]);
-  const [courtesies, setCourtesies] = useState<
-    {
-      id: string;
-      number: string;
-      table_name: string;
-      table_floor: number;
-      authorized_by: string;
-      reason: string;
-      amount_cents: number;
-      created_at: string;
-      items: { name: string; quantity: string }[];
-    }[]
-  >([]);
-  return (
-    <>
-      <h1>Administración</h1>
-      <div className="admin-grid">
-        <section className="panel">
-          <h2>Crear usuario</h2>
-          <form
-            onSubmit={(e) =>
-              formAction(e, run, reload, async (f) => {
-                await api("/users", "POST", {
-                  name: f.get("name"),
-                  email: f.get("email"),
-                  password: f.get("password"),
-                  role: f.get("role"),
-                });
-                setUsers(await api("/users"));
-              })
-            }
-          >
-            <label>
-              Nombre
-              <input name="name" required maxLength={100} />
-            </label>
-            <label>
-              Correo
-              <input name="email" type="email" autoComplete="off" required />
-            </label>
-            <label>
-              Contraseña inicial
-              <input
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                required
-              />
-            </label>
-            <label>
-              Rol
-              <select name="role">
-                {["MESERO", "CAJERO", "COCINA", "ADMINISTRADOR"].map((r) => (
-                  <option key={r}>{r}</option>
-                ))}
-                {canManageSuper && <option>SUPERADMIN</option>}
-              </select>
-            </label>
-            <button disabled={busy}>Crear usuario</button>
-          </form>
-        </section>
-        <section className="panel">
-          <h2>Control del restaurante</h2>
-          <button
-            onClick={() =>
-              void run(async () => {
-                setUsers(await api("/users"));
-                setReport(await api("/reports"));
-                setAudit(await api("/audit"));
-                setCourtesies(await api("/courtesies"));
-              })
-            }
-          >
-            Consultar usuarios, ventas y bitácora
-          </button>
-          <p>Las ventas se agrupan por fecha de Guatemala y método de pago.</p>
-        </section>
-      </div>
-      <h2>Usuarios</h2>
-      {users.map((u) => (
-        <div className="panel row" key={u.id}>
-          <span>
-            {u.name} · {u.role} · {u.active ? "Activo" : "Bloqueado"}
-          </span>
-          <button
-            className="secondary"
-            disabled={busy || (u.role === "SUPERADMIN" && !canManageSuper)}
-            onClick={() =>
-              void run(async () => {
-                await api(`/users/${u.id}`, "PATCH", {
-                  role: u.role,
-                  active: !u.active,
-                });
-                setUsers(await api("/users"));
-              })
-            }
-          >
-            {u.active ? "Bloquear" : "Activar"}
-          </button>
-        </div>
-      ))}
-      <h2>Ventas</h2>
-      {report.map((r, i) => (
-        <p className="panel" key={i}>
-          {String(r.day).slice(0, 10)} · {r.method} · {r.sales}{" "}
-          {r.method === "CORTESIA" ? "órdenes de cortesía" : "ventas"} ·{" "}
-          {money(r.total_cents)}
-        </p>
-      ))}
-      <h2>Cortesías autorizadas</h2>
-      <p>
-        Últimas 100 autorizaciones, separadas de los ingresos y sin sumar
-        efectivo a caja.
-      </p>
-      {courtesies.map((c) => (
-        <article className="panel" key={c.id}>
-          <h3>
-            Orden #{c.number} · {c.table_name} · Nivel {c.table_floor}
-          </h3>
-          <p>
-            {c.items.map((i) => `${i.quantity} × ${i.name}`).join(" · ")} ·
-            Valor {money(c.amount_cents)}
-          </p>
-          <p>Motivo: {c.reason}</p>
-          <small>
-            {c.authorized_by} · {new Date(c.created_at).toLocaleString("es-GT")}
-          </small>
-        </article>
-      ))}
-      <h2>Bitácora</h2>
-      {audit.map((a) => (
-        <p key={a.id}>
-          {new Date(a.created_at).toLocaleString("es-GT")} · {a.action} ·{" "}
-          {a.result}
-        </p>
-      ))}
     </>
   );
 }

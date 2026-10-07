@@ -51,6 +51,7 @@ export type Order = {
   notes: string;
   items: Item[];
   paid: boolean;
+  sent_to_cash_at: string | null;
   created_at: string;
   waiter: string;
 };
@@ -59,6 +60,9 @@ export type Shift = {
   closed_at: string | null;
   current_expected_cents: string;
   difference_cents: string | null;
+  closure_requested_at: string | null;
+  closure_counted_cents: number | null;
+  closure_request_id: string | null;
 };
 export type Action = (operation: () => Promise<void>) => Promise<void>;
 export type Mutate = <T>(

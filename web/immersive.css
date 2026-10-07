@@ -1,4 +1,19 @@
 /* Native SVG volumes keep the POS light on tablets: no WebGL or continuous render loop. */
+.finance-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.finance-metrics .metric {
+  display: block;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.panel {
+  overflow-wrap: anywhere;
+}
 .table-scene {
   width: 218px;
   max-width: 100%;
@@ -325,6 +340,9 @@
   }
 }
 @media print {
+  .module-body:has(.receipt) > :not(.modal) {
+    display: none !important;
+  }
   .module-stage {
     min-height: 0;
   }

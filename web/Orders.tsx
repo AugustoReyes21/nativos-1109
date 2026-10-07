@@ -1,12 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { api, money, toCents } from "./api";
-import {
-  human,
-  type Action,
-  type Item,
-  type Mutate,
-  type Order,
-} from "./types";
+import { api, money } from "./api";
+import { CheckoutForm } from "./CheckoutForm";
+import { Receipt, type ReceiptData } from "./Receipt";
+import { human, type Action, type Mutate, type Order } from "./types";
 export function Orders({
   orders,
   can,
@@ -16,6 +12,7 @@ export function Orders({
   mutate,
   reload,
   cashOpen,
+  checkoutMode = false,
 }: {
   orders: Order[];
   can: (p: string) => boolean;
@@ -25,20 +22,10 @@ export function Orders({
   mutate: Mutate;
   reload: () => Promise<void>;
   cashOpen: boolean;
+  checkoutMode?: boolean;
 }) {
-  const [receipt, setReceipt] = useState<{
-    payment: {
-      number: string;
-      amount_cents: number;
-      gross_cents: number;
-      courtesy_cents: number;
-      method: string;
-      change_cents: number;
-      table_name: string;
-      table_floor: number;
-    };
-    items: Item[];
-  } | null>(null);
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [copy, setCopy] = useState(false);
   const status = (o: Order, next: string) =>
     void run(async () => {
       await mutate(
@@ -48,16 +35,11 @@ export function Orders({
       );
       await reload();
     });
-  const pay = (e: FormEvent<HTMLFormElement>, o: Order) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
+  const pay = (data: object, o: Order) => {
     void run(async () => {
-      await mutate("/payments", {
-        orderId: o.id,
-        method: f.get("method"),
-        tenderedCents: toCents(f.get("amount")),
-      });
+      await mutate("/payments", data);
       await reload();
+      setCopy(false);
       setReceipt(await api(`/orders/${o.id}/receipt`));
     });
   };
@@ -100,7 +82,13 @@ export function Orders({
       <div className="section-heading">
         <div>
           <p className="eyebrow">SERVICIO EN TIEMPO REAL</p>
-          <h1>{kitchen ? "Cocina" : "Órdenes del servicio"}</h1>
+          <h1>
+            {checkoutMode
+              ? "Cuentas enviadas a caja"
+              : kitchen
+                ? "Cocina"
+                : "Órdenes del servicio"}
+          </h1>
         </div>
         <button
           className="secondary"
@@ -168,6 +156,29 @@ export function Orders({
                 </p>
               )}
               <div className="actions">
+                {!o.paid && o.status !== "CANCELADO" && (
+                  <>
+                    {o.sent_to_cash_at ? (
+                      <span className="badge">Enviada a caja</span>
+                    ) : (
+                      can("orders.send_cash") && (
+                        <button
+                          disabled={busy || !connected}
+                          onClick={() =>
+                            void run(async () => {
+                              await mutate(`/orders/${o.id}/send-to-cash`, {
+                                version: o.version,
+                              });
+                              await reload();
+                            })
+                          }
+                        >
+                          Enviar a caja
+                        </button>
+                      )
+                    )}
+                  </>
+                )}
                 {can("kitchen.update") &&
                   ["PENDIENTE", "EN_PREPARACION"].includes(o.status) && (
                     <button
@@ -268,51 +279,36 @@ export function Orders({
                     </form>
                   </details>
                 )}
-              {can("payments.create") &&
+              {checkoutMode &&
+                can("payments.create") &&
+                o.sent_to_cash_at &&
                 !o.paid &&
                 o.status !== "CANCELADO" && (
                   <details>
                     <summary>
                       Cobrar {money(o.total_cents - o.courtesy_cents)}
                     </summary>
-                    <form onSubmit={(e) => pay(e, o)}>
-                      <label>
-                        Método
-                        <select name="method">
-                          <option>EFECTIVO</option>
-                          <option>TARJETA</option>
-                          <option>TRANSFERENCIA</option>
-                        </select>
-                      </label>
-                      <label>
-                        Importe recibido (Q)
-                        <input
-                          name="amount"
-                          key={o.courtesy_cents}
-                          type="number"
-                          step="0.01"
-                          min={(o.total_cents - o.courtesy_cents) / 100}
-                          defaultValue={(
-                            (o.total_cents - o.courtesy_cents) /
-                            100
-                          ).toFixed(2)}
-                          required
-                        />
-                      </label>
-                      <button disabled={busy || !connected || !cashOpen}>
-                        Confirmar cobro
-                      </button>
-                      {!cashOpen && <p>Abre la caja para cobrar.</p>}
-                    </form>
+                    <CheckoutForm
+                      order={o}
+                      disabled={busy || !connected || !cashOpen}
+                      submit={(data) => pay(data, o)}
+                    />
+                    {!cashOpen && (
+                      <p>
+                        Abre la caja o espera autorización del cierre para
+                        cobrar.
+                      </p>
+                    )}
                   </details>
                 )}
               {can("payments.create") && o.paid && (
                 <button
                   className="secondary"
                   onClick={() =>
-                    void run(async () =>
-                      setReceipt(await api(`/orders/${o.id}/receipt`)),
-                    )
+                    void run(async () => {
+                      setCopy(true);
+                      setReceipt(await api(`/orders/${o.id}/receipt`));
+                    })
                   }
                 >
                   Ver comprobante
@@ -328,47 +324,14 @@ export function Orders({
         </p>
       )}
       {receipt && (
-        <div
-          className="modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Comprobante"
-        >
-          <section className="panel receipt">
-            <h2>Nativos1109</h2>
-            <p>Comprobante interno · No es factura fiscal</p>
-            <h3>Orden #{receipt.payment.number}</h3>
-            <p>
-              {receipt.payment.table_name} · Nivel {receipt.payment.table_floor}
-            </p>
-            {receipt.items.map((i, n) => (
-              <p key={n}>
-                {i.quantity} × {i.name} · {money(i.quantity * i.price_cents)}
-                {i.courtesy_quantity > 0 &&
-                  ` · ${i.courtesy_quantity} de cortesía`}
-              </p>
-            ))}
-            <p>
-              Consumo {money(receipt.payment.gross_cents)} · Cortesías{" "}
-              {money(receipt.payment.courtesy_cents)}
-            </p>
-            <strong>Total cobrado {money(receipt.payment.amount_cents)}</strong>
-            <p>
-              {receipt.payment.method} · Cambio{" "}
-              {money(receipt.payment.change_cents)}
-            </p>
-            <div className="actions no-print">
-              <button onClick={() => window.print()}>Imprimir</button>
-              <button
-                className="secondary"
-                autoFocus
-                onClick={() => setReceipt(null)}
-              >
-                Cerrar
-              </button>
-            </div>
-          </section>
-        </div>
+        <Receipt
+          data={receipt}
+          copy={copy}
+          close={() => setReceipt(null)}
+          run={run}
+          mutate={mutate}
+          disabled={busy || !connected}
+        />
       )}
     </>
   );
