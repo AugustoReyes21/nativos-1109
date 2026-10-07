@@ -407,14 +407,25 @@ describe("PostgreSQL-backed API", () => {
         })
       ).status,
     ).toBe(401);
+    // Attack a real MFA challenge: without one, every attempt fails anyway and
+    // a 429 would only prove a shared anonymous bucket exists.
     const attacker = request.agent(server.app);
+    expect(
+      (
+        await post(attacker, "/api/auth/login", {
+          email: "administrador@example.test",
+          password: testPassword,
+        })
+      ).body.mfaRequired,
+    ).toBe(true);
     const codes: number[] = [];
     for (let i = 0; i < 6; i++)
       codes.push(
         (await post(attacker, "/api/auth/mfa/verify", { code: "000000" }))
           .status,
       );
-    expect(codes).toContain(429);
+    expect(codes.slice(0, 5).every((code) => code === 401)).toBe(true);
+    expect(codes[5]).toBe(429);
   });
   it("returns security headers and never includes password/token/MFA secrets in audit records", async () => {
     const result = await request(server.app).get("/health");

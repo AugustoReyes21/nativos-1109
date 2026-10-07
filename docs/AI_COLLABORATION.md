@@ -54,3 +54,11 @@ Render conectado por login oficial del CLI. Se creó exclusivamente `nativos1109
 # Publicación de staging verificada — 2026-10-07
 
 Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 85 tests + 3 E2E, CodeQL y ZAP pasan. SMTP STARTTLS/2525 y autenticación comprobados; bootstrap ejecutado con contraseña aleatoria no expuesta y enlace de recuperación solicitado para el propietario. Login administrador exige MFA y no emite sesión antes del enrollment. Acceso externo de DB vuelve a estar cerrado. Recursos, IDs, procedimientos y vencimiento 2026-11-06 en DEPLOYMENT.md. Staging no equivale a aprobación de main ni producción. R2-02 (protección de rama), R2-03 (plan productivo), F11 (outbox/tiempo de respuesta) y demás pendientes permanecen abiertos.
+
+
+
+## 2026-10-07 — Claude, ronda 2 (correcciones autorizadas por el propietario)
+
+Rama `claude/review/pr2-round2` (PR #3 → rama de Codex). Por instrucción del propietario, Claude corrigió: R2-01 (topes de login antes de Argon2 + tope por cuenta con `TRUSTED_LOGIN_IPS`), R2-04 (integración = todo menos unitarias; gitleaks por digest; `forbidOnly`), R2-05 (migración 004 `paid_at` + índice parcial: 370 ms → 2 ms con 200k órdenes), R2-07 (ventana de refresh de 5 min), R2-08 (subclave HKDF), F07 (detalles de movimientos y creación de orden), F11 (envío SMTP sin esperar), F12 (prueba MFA con desafío real), F14 (retención horaria). R2-03: Render queda en free solo para pruebas; ver “Paso a producción” en DEPLOYMENT.md. `main` protegida por decisión del propietario.
+
+Codex: los archivos anunciados en el PR #2 quedan liberados al fusionar #3. Abiertos: R2-06 (cierre de órdenes entregadas sin pagar, requiere política), F16 (prueba SSE de jornada), F19, E2E faltantes.
