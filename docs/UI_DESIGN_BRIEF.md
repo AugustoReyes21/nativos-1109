@@ -24,7 +24,7 @@ Pruebas de validación/DB/permisos/idempotencia de mesas; pruebas de estado deri
 
 ## Primera entrega y límites
 
-93 pruebas unitarias/API/DB pasan; 3 E2E pasan con flujo completo POS en desktop/tablet/mobile. Lint, typecheck, build y npm audit pasan (0 vulnerabilidades reportadas). JS inicial 120.38 KB gzip, CSS 5.57 KB gzip antes del último ajuste compacto móvil. Revisión independiente final aún pendiente.
+94 pruebas unitarias/API/DB pasan; 3 E2E pasan con flujo completo POS en desktop/tablet/mobile. Lint, typecheck, build y npm audit pasan (0 vulnerabilidades reportadas). JS inicial 120.41 KB gzip, CSS 5.71 KB gzip. Revisión independiente final aún pendiente. Implementación publicada en [PR #7](https://github.com/AugustoReyes21/nativos-1109/pull/7), todavía no desplegada en Render.
 
 005 conserva mesas existentes en nivel 1, capacidad 4 y forma cuadrada por compatibilidad; administrador debe verificar datos reales. 006 conserva nombre/nivel al crear órdenes y los protege con trigger: renombrar una mesa no cambia un comprobante histórico. Backfill de órdenes anteriores usa metadatos actuales, pues el sistema no tenía historial de nombres/niveles. Migraciones transaccionales; no edición manual en Render.
 

@@ -57,6 +57,8 @@ Render: https://nativos1109.onrender.com, commit 169d9d3, después de CI verde. 
 
 ## 2026-10-07 — Sala Nativos: Codex + Claude
 
+Actualización final del bloque: PR #7 publicado en `codex/feature/two-level-floorplan`. 94/94 pruebas y 3/3 E2E en 5110761; CI de ese commit verde (Quality and security: 37656147398; ZAP: 37656147350). Último ajuste menor: filtro móvil sin texto recortado y capturas esperando opacidad final; lint/typecheck/build y 3/3 E2E reejecutados. Revisión final de Claude solicitada en PR #7, aún sin dictamen: no se fusiona ni despliega en Render por anticipado. Staging continúa con versión anterior. Croquis/cantidades pendientes del propietario.
+
 Coordinación real en issue #5: Claude aceptó revisar UX, accesibilidad y permisos sin editar frontend de Codex. Codex implementa `web/`, `server/pos.ts` (mesas y snapshot), 005/006, `tests/table-snapshot.test.ts` y `e2e/pos.spec.ts`. Claude mantiene `tests/security/floors.test.ts` y `docs/reviews/ui-floorplan-review.md` en su rama. #4 integrado localmente con merge limpio; no force push ni cambios directos a main.
 
 Decisiones D1/D2/D4/D5 de Claude adoptadas: estado global calculado en backend sin importes ajenos, Para servir, nivel en KDS/recibo y snapshot histórico inmutable. D3/D6 aplazados explícitamente: posiciones libres/desactivar mesas requieren siguiente entrega. Plano actual es cuadrícula operativa configurable; no se inventan datos reales. D7: Motion/reduced-motion, SVG nativo, fuentes del sistema, JS inicial120KB gzip y lista alternativa.

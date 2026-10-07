@@ -1027,7 +1027,7 @@ h1 {
     border-radius: 11px;
   }
   .floor-summary small {
-    font-size: 0.49rem;
+    font-size: 0.6rem;
     letter-spacing: 0.02em;
     min-height: 24px;
   }
@@ -1066,9 +1066,13 @@ h1 {
   }
   .table-search {
     min-width: 0;
+    flex: 1;
+    width: auto;
   }
   .state-filter {
     max-width: 145px;
+    width: 145px;
+    flex-shrink: 0;
   }
   .state-filter select {
     font-size: 0.66rem;

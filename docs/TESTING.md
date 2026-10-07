@@ -2,7 +2,7 @@
 
 ## Sala Nativos — 2026-10-07, PR #7
 
-`tests/table-snapshot.test.ts`: creación idempotente, ediciones concurrentes con versión (200/409), snapshot de nombre/nivel en orden y recibo, integridad del snapshot en DB, estado de mesa pagada pero no entregada, y upgrade de historial existente pagado/cancelado con guards restaurados. Cuatro pruebas pasan; suite anterior completa: 93/93 antes de agregar la cuarta (re-ejecución final pendiente).
+`tests/table-snapshot.test.ts`: creación idempotente, ediciones concurrentes con versión (200/409), snapshot de nombre/nivel en orden y recibo, integridad del snapshot en DB, estado de mesa pagada pero no entregada, y upgrade de historial existente pagado/cancelado con guards restaurados. Cuatro pruebas pasan; suite completa: **94/94** en 5110761, seguida de **3/3 E2E**. Lint/typecheck/build pasan; npm audit informa 0 vulnerabilidades. Bundle inicial 120.41 KB gzip (CSS 5.71 KB). CI y revisión independiente se consultan en PR #7, no se presumen a partir de este resultado local.
 
 `e2e/pos.spec.ts`: recorrido real con mesa redonda de seis plazas en nivel 2, selección por teclado, borrador conservado al navegar, señal Para servir por SSE, nivel en KDS/recibo, vista lista, movimiento reducido, ausencia de overflow, reintento idempotente después de pérdida de respuesta, reconexión y cobro. 3/3 pasan después del ajuste móvil compacto; capturas en `test-results/floor-{desktop,tablet,mobile}.png` (ignoradas por Git). No se probaron dispositivos físicos del restaurante. Revisión axe independiente asignada a Claude, no declarada aprobada.
 

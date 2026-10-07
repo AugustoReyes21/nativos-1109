@@ -103,6 +103,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     });
     await expect(visualTable).toContainText("6 personas");
     await expect(visualTable).toBeEnabled();
+    await expect(page.locator(".table-plan")).toHaveCSS("opacity", "1");
     await page.screenshot({
       path: "test-results/floor-" + info.project.name + ".png",
       fullPage: true,
