@@ -23,7 +23,7 @@
 :root {
   --forest: #173e34;
   --ink: #233c34;
-  --muted: #68756e;
+  --muted: #526158;
   --paper: #f6f5f0;
   --line: #e2e6de;
   --accent: #b57a3c;
@@ -132,9 +132,9 @@ a:focus-visible {
   background: #f1f3eb;
 }
 .nav-caption {
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   letter-spacing: 0.16em;
-  color: #777f6e;
+  color: #52604c;
   font-weight: 700;
   padding: 0 15px;
   margin: 0 0 16px;
@@ -150,11 +150,11 @@ a:focus-visible {
   font:
     500 21px Georgia,
     serif;
-  color: #8e7958;
+  color: #705b38;
 }
 .nav-signature small {
   line-height: 1.8;
-  color: #7a847b;
+  color: #536257;
 }
 .draft-dot {
   height: 7px;
@@ -187,8 +187,8 @@ h1 {
   margin-bottom: 12px;
 }
 .page-heading .eyebrow {
-  font-size: 0.6rem;
-  color: #7b725a;
+  font-size: 0.75rem;
+  color: #665d45;
   letter-spacing: 0.19em;
   margin-bottom: 12px;
 }
@@ -557,8 +557,8 @@ h1 {
   gap: 10px;
   padding: 14px 24px;
   border-top: 1px solid var(--line);
-  font-size: 0.64rem;
-  color: #717969;
+  font-size: 0.75rem;
+  color: #52604b;
   flex-wrap: wrap;
 }
 .floor-empty {
@@ -661,7 +661,7 @@ h1 {
   font-size: 1.3rem;
 }
 .cart .eyebrow {
-  font-size: 0.6rem;
+  font-size: 0.75rem;
 }
 .cart-empty {
   padding: 25px 0;
@@ -896,7 +896,7 @@ h1 {
     font-size: 0.8rem;
   }
   .page-heading .eyebrow {
-    font-size: 0.52rem;
+    font-size: 0.75rem;
   }
   .floor-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -964,7 +964,7 @@ h1 {
     padding: 10px;
   }
   .floor-footnote {
-    font-size: 0.6rem;
+    font-size: 0.75rem;
     padding: 13px;
   }
   .floor-workspace {

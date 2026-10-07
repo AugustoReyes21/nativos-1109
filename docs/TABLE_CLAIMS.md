@@ -31,3 +31,6 @@ Migración 007: `table_claims`, PK por `table_id`, FK a mesa/usuario/sesión, UU
 `e2e/table-claims.spec.ts`: dos sesiones reales de mesero, cero órdenes existentes, bloqueo visual/backend, liberación y siguiente propietario, en desktop/tablet/mobile. Se reejecuta además el recorrido completo POS de `e2e/pos.spec.ts`.
 
 Pendiente independiente: revisión de Claude y su archivo propio `tests/security/table-claims-review.test.ts`; no afirmar aprobación ni despliegue anticipadamente. Traslado administrativo de órdenes/meseros, política de cambio de turno y desbloqueo administrativo auditado no incluidos en este bloque. Historial previo con órdenes abiertas de varios meseros requiere conciliación: todos los propietarios verán bloqueo para nuevos pedidos hasta cerrar el servicio existente; no se reasigna silenciosamente.
+# Límite contra acaparamiento — revisión CL-01
+
+Máximo dos reservas sin pedido por sesión. Un advisory lock por sesión serializa adquisiciones en mesas distintas antes de bloquear las mesas; exceder devuelve 409 `TABLE_CLAIM_LIMIT`. Renovar una reserva existente no consume otra plaza. Cambiar mesa libera la anterior dentro de la misma transacción; cualquier error revierte la liberación. Mesas con órdenes propias abiertas no consumen el cupo. Ver pruebas propias y `tests/security/table-claims-review.test.ts` aportada por Claude.

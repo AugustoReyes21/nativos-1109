@@ -9,7 +9,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    branch: codex/feature/secure-pos-foundation
+    branch: codex/feature/menu-superadmin-courtesies
     buildCommand: npm ci --include=dev && npm run build
     startCommand: node dist/server/migrate.js && node dist/server/main.js
     healthCheckPath: /health/ready

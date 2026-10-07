@@ -33,3 +33,6 @@ Coste actual: dos consultas por conexión cada 2 segundos. Adecuado para un prim
 ## Evolución
 
 Roles y permisos están en tablas, sin enum cerrado en autenticación. Los endpoints comprueban permisos centralizados. MFA obligatorio está asociado actualmente al rol ADMINISTRADOR; antes de añadir roles privilegiados equivalentes, convertir esa política a `roles.mfa_required`. La interfaz ofrece cuatro roles iniciales; editor de roles/permisos pendiente de revisión de elevación de privilegios.
+# Extensión: menú y cortesías (2026-10-07)
+
+Migraciones 008/009: catálogo importado con códigos únicos y stock inicial 0; política `roles.requires_mfa` para ADMINISTRADOR/SUPERADMIN; ledger append-only por unidades de producto. El bruto histórico no cambia; pagos y caja trabajan con el neto. Locks caja → orden serializan cobro, cortesía y cierre. Liquidación total `CORTESIA` de importe 0 no agrega efectivo. Contrato y límites en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md).

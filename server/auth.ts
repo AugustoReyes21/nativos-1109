@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { hkdfSync } from "node:crypto";
+import { requiresMfa } from "./roles.js";
 import { SignJWT, jwtVerify } from "jose";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
@@ -43,7 +44,13 @@ export function auth(db: DB, c: Config, mail: Mailer) {
   const key = new TextEncoder().encode(c.JWT_SECRET);
   // Dedicated subkey: cached refresh replacements never share a key with MFA secrets.
   const replacementKey = Buffer.from(
-    hkdfSync("sha256", Buffer.from(c.MFA_KEY, "hex"), Buffer.alloc(0), "nativos1109/refresh-replacement/v1", 32),
+    hkdfSync(
+      "sha256",
+      Buffer.from(c.MFA_KEY, "hex"),
+      Buffer.alloc(0),
+      "nativos1109/refresh-replacement/v1",
+      32,
+    ),
   ).toString("hex");
   const cookie = {
     httpOnly: true,
@@ -138,8 +145,8 @@ export function auth(db: DB, c: Config, mail: Mailer) {
     const { rows } = await db.query<Identity>(
       `SELECT u.id,u.name,u.email,u.role,u.mfa_enabled,s.id AS "sessionId",
       ARRAY(SELECT permission FROM role_permissions WHERE role=u.role) AS permissions
-      FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.id=$1 AND u.id=$2 AND u.active
-      AND s.revoked_at IS NULL AND s.expires_at>now() AND (u.role<>'ADMINISTRADOR' OR u.mfa_enabled)`,
+      FROM users u JOIN roles r ON r.name=u.role JOIN sessions s ON s.user_id=u.id WHERE s.id=$1 AND u.id=$2 AND u.active
+      AND s.revoked_at IS NULL AND s.expires_at>now() AND (NOT r.requires_mfa OR u.mfa_enabled)`,
       [payload.sid, payload.sub],
     );
     return rows[0] ?? fail(401, "UNAUTHENTICATED", "Inicia sesión");
@@ -258,15 +265,24 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           [failureKeys, [900, 900, 3600]],
         );
         // A pseudonymous account tag shows operators which account is targeted.
-        await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE", undefined, {
-          accountHash: digest(input.email),
-        });
+        await audit(
+          db,
+          req,
+          "LOGIN_FAILURE",
+          "auth",
+          undefined,
+          "FAILURE",
+          undefined,
+          {
+            accountHash: digest(input.email),
+          },
+        );
         return fail(401, "INVALID_CREDENTIALS", "Credenciales inválidas");
       }
       // Another concurrent request may have exhausted a budget during Argon2.
       await checkFailures();
       await db.query("DELETE FROM rate_limits WHERE key=$1", [failureKey]);
-      if (u.mfa_enabled || u.role === "ADMINISTRADOR") {
+      if (u.mfa_enabled || (await requiresMfa(db, u.role))) {
         const token = randomToken();
         await db.query(
           "INSERT INTO auth_challenges(hash,user_id,purpose,expires_at) VALUES ($1,$2,$3,now()+interval '5 minutes')",
@@ -288,7 +304,7 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           !locked.rows[0]?.active ||
           locked.rows[0].password_hash !== u.password_hash ||
           locked.rows[0].mfa_enabled ||
-          locked.rows[0].role === "ADMINISTRADOR"
+          (await requiresMfa(tx, locked.rows[0].role))
         )
           fail(401, "LOGIN_RETRY", "Inicia sesión nuevamente");
         await audit(tx, req, "LOGIN_SUCCESS", "auth", u.id, "SUCCESS", u.id);
@@ -451,12 +467,15 @@ export function auth(db: DB, c: Config, mail: Mailer) {
             } catch {
               // Unreadable cache (e.g. key rotation): fall through to revocation.
             }
-            const successor = refresh === null ? undefined : (
-              await tx.query<{ used_at: Date | null }>(
-                "SELECT used_at FROM refresh_tokens WHERE hash=$1",
-                [digest(refresh)],
-              )
-            ).rows[0];
+            const successor =
+              refresh === null
+                ? undefined
+                : (
+                    await tx.query<{ used_at: Date | null }>(
+                      "SELECT used_at FROM refresh_tokens WHERE hash=$1",
+                      [digest(refresh)],
+                    )
+                  ).rows[0];
             if (refresh !== null && successor && !successor.used_at)
               return { refresh, access: await accessToken(s.user_id, s.id) };
           }
@@ -481,13 +500,17 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           s.revoked_at ||
           !s.valid ||
           !user.active ||
-          (user.role === "ADMINISTRADOR" && !user.mfa_enabled)
+          ((await requiresMfa(tx, user.role)) && !user.mfa_enabled)
         )
           return null;
         const refresh = randomToken();
         await tx.query(
           "UPDATE refresh_tokens SET used_at=now(),retry_key_hash=$2,replacement_encrypted=$3 WHERE hash=$1",
-          [hash, retryHash, retryHash ? encrypt(refresh, replacementKey) : null],
+          [
+            hash,
+            retryHash,
+            retryHash ? encrypt(refresh, replacementKey) : null,
+          ],
         );
         await tx.query(
           "INSERT INTO refresh_tokens(hash,session_id) VALUES ($1,$2)",
@@ -536,9 +559,14 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         // Delivery starts now but is not awaited: SMTP latency must not reveal
         // whether the account exists. Failures are audited; the mailer logs them.
         void mail(u.email, token).catch(() =>
-          audit(db, req, "RESET_DELIVERY_FAILURE", "auth", undefined, "FAILURE").catch(
-            () => undefined,
-          ),
+          audit(
+            db,
+            req,
+            "RESET_DELIVERY_FAILURE",
+            "auth",
+            undefined,
+            "FAILURE",
+          ).catch(() => undefined),
         );
       }
       res.json({
@@ -640,7 +668,7 @@ export function auth(db: DB, c: Config, mail: Mailer) {
             !(await factor(tx, u, input.code))
           )
             return null;
-          if (action === "disable" && u.role === "ADMINISTRADOR")
+          if (action === "disable" && (await requiresMfa(tx, u.role)))
             throw new AppError(
               403,
               "MFA_REQUIRED",

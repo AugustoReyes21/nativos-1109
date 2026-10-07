@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "db:migrate": "tsx server/migrate.ts",
     "db:bootstrap": "tsx server/bootstrap.ts",
+    "db:promote-owner": "tsx server/promote-owner.ts",
     "scan:secrets": "node scripts/scan-secrets.mjs"
   },
   "dependencies": {
@@ -39,6 +40,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",
     "@types/cookie-parser": "1.4.10",

@@ -175,6 +175,9 @@ export function NewOrder({
                 }
               >
                 <strong>{p.name}</strong>
+                {p.description && (
+                  <small className="product-description">{p.description}</small>
+                )}
                 <span>{money(p.price_cents)}</span>
                 <small>{p.stock ? `${p.stock} disponibles` : "Agotado"}</small>
               </button>

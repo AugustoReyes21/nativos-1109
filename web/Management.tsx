@@ -226,6 +226,10 @@ export function CatalogView({ catalog, busy, run, mutate, reload }: Props) {
         ))}
       </div>
       <h2>Disponibilidad diaria y precios</h2>
+      <p>
+        Los productos importados del menú comienzan con stock 0. Registra las
+        cantidades reales de la jornada para habilitar pedidos.
+      </p>
       <div className="product-grid">
         {catalog.products.map((p) => (
           <section className="panel" key={`${p.id}:${p.version}`}>
@@ -407,13 +411,27 @@ export function AdminView({
   busy,
   run,
   reload,
-}: Omit<Props, "catalog" | "mutate">) {
+  canManageSuper,
+}: Omit<Props, "catalog" | "mutate"> & { canManageSuper: boolean }) {
   const [users, setUsers] = useState<User[]>([]);
   const [report, setReport] = useState<
     { day: string; method: string; total_cents: string; sales: string }[]
   >([]);
   const [audit, setAudit] = useState<
     { id: string; action: string; created_at: string; result: string }[]
+  >([]);
+  const [courtesies, setCourtesies] = useState<
+    {
+      id: string;
+      number: string;
+      table_name: string;
+      table_floor: number;
+      authorized_by: string;
+      reason: string;
+      amount_cents: number;
+      created_at: string;
+      items: { name: string; quantity: string }[];
+    }[]
   >([]);
   return (
     <>
@@ -459,6 +477,7 @@ export function AdminView({
                 {["MESERO", "CAJERO", "COCINA", "ADMINISTRADOR"].map((r) => (
                   <option key={r}>{r}</option>
                 ))}
+                {canManageSuper && <option>SUPERADMIN</option>}
               </select>
             </label>
             <button disabled={busy}>Crear usuario</button>
@@ -472,6 +491,7 @@ export function AdminView({
                 setUsers(await api("/users"));
                 setReport(await api("/reports"));
                 setAudit(await api("/audit"));
+                setCourtesies(await api("/courtesies"));
               })
             }
           >
@@ -488,7 +508,7 @@ export function AdminView({
           </span>
           <button
             className="secondary"
-            disabled={busy}
+            disabled={busy || (u.role === "SUPERADMIN" && !canManageSuper)}
             onClick={() =>
               void run(async () => {
                 await api(`/users/${u.id}`, "PATCH", {
@@ -506,9 +526,30 @@ export function AdminView({
       <h2>Ventas</h2>
       {report.map((r, i) => (
         <p className="panel" key={i}>
-          {String(r.day).slice(0, 10)} · {r.method} · {r.sales} ventas ·{" "}
+          {String(r.day).slice(0, 10)} · {r.method} · {r.sales}{" "}
+          {r.method === "CORTESIA" ? "órdenes de cortesía" : "ventas"} ·{" "}
           {money(r.total_cents)}
         </p>
+      ))}
+      <h2>Cortesías autorizadas</h2>
+      <p>
+        Últimas 100 autorizaciones, separadas de los ingresos y sin sumar
+        efectivo a caja.
+      </p>
+      {courtesies.map((c) => (
+        <article className="panel" key={c.id}>
+          <h3>
+            Orden #{c.number} · {c.table_name} · Nivel {c.table_floor}
+          </h3>
+          <p>
+            {c.items.map((i) => `${i.quantity} × ${i.name}`).join(" · ")} ·
+            Valor {money(c.amount_cents)}
+          </p>
+          <p>Motivo: {c.reason}</p>
+          <small>
+            {c.authorized_by} · {new Date(c.created_at).toLocaleString("es-GT")}
+          </small>
+        </article>
       ))}
       <h2>Bitácora</h2>
       {audit.map((a) => (

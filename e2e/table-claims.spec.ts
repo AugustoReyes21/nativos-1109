@@ -15,7 +15,7 @@ async function login(page: Page, email: string) {
     .click();
   await expect(page.getByText("● En línea", { exact: true })).toBeVisible();
   await page
-    .getByRole("button", { name: "Nivel 2 Segundo nivel", exact: true })
+    .getByRole("button", { name: /Nivel 2 Segundo nivel$/ })
     .click();
 }
 test("a selected table is unavailable to another waiter before an order exists", async ({
@@ -52,10 +52,10 @@ test("a selected table is unavailable to another waiter before an order exists",
     await login(page, `a-${tag}@example.test`);
     await login(other, `b-${tag}@example.test`);
     const tableA = page.getByRole("button", {
-      name: new RegExp(`${name}, nivel 2,`),
+      name: new RegExp(name),
     });
     const tableB = other.getByRole("button", {
-      name: new RegExp(`${name}, nivel 2,`),
+      name: new RegExp(name),
     });
     await tableA.click();
     await expect(

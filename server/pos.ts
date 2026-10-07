@@ -31,6 +31,7 @@ type Order = {
   user_id: string;
   status: string;
   total_cents: number;
+  courtesy_cents: number;
   version: number;
 };
 type Shift = {
@@ -381,7 +382,9 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
           AND status IN ('ENTREGADO','CANCELADO') AND created_at>now()-interval '24 hours'
           ORDER BY created_at DESC LIMIT 200))
       SELECT o.*,u.name AS waiter,
-      (SELECT json_agg(i ORDER BY i.name) FROM order_items i WHERE i.order_id=o.id) AS items,
+      (SELECT json_agg(line ORDER BY line.name) FROM
+        (SELECT i.*,coalesce(cq.quantity,0) AS courtesy_quantity FROM order_items i
+         LEFT JOIN courtesy_quantities cq ON cq.order_id=i.order_id AND cq.product_id=i.product_id WHERE i.order_id=o.id) line) AS items,
       o.paid_at IS NOT NULL AS paid
       FROM visible v JOIN orders o ON o.id=v.id
       JOIN users u ON u.id=o.user_id
@@ -492,6 +495,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
           fail(409, "STALE_VERSION", "La orden cambió. Actualiza los datos");
         if (input.status === "CANCELADO") {
           if (
+            o.courtesy_cents > 0 ||
             !["PENDIENTE", "EN_PREPARACION", "LISTO"].includes(o.status) ||
             (await tx.query("SELECT id FROM payments WHERE order_id=$1", [id]))
               .rowCount
@@ -696,9 +700,10 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             .rowCount
         )
           fail(409, "ALREADY_PAID", "La orden ya fue cobrada");
+        const due = o.total_cents - o.courtesy_cents;
         if (
-          input.tenderedCents < o.total_cents ||
-          (input.method !== "EFECTIVO" && input.tenderedCents !== o.total_cents)
+          input.tenderedCents < due ||
+          (input.method !== "EFECTIVO" && input.tenderedCents !== due)
         )
           fail(400, "INVALID_AMOUNT", "El importe no corresponde al total");
         const payment = (
@@ -709,9 +714,9 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
               s.id,
               identity(req).id,
               input.method,
-              o.total_cents,
+              due,
               input.tenderedCents,
-              input.tenderedCents - o.total_cents,
+              input.tenderedCents - due,
             ],
           )
         ).rows[0]!;
@@ -727,7 +732,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             orderId: o.id,
             shiftId: s.id,
             method: input.method,
-            amountCents: o.total_cents,
+            amountCents: due,
             tenderedCents: input.tenderedCents,
           },
         );
@@ -741,7 +746,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     const id = idSchema.parse(req.params.id);
     const payment = (
       await db.query(
-        "SELECT p.*,o.number,o.notes,o.table_name,o.table_floor FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.order_id=$1",
+        "SELECT p.*,o.number,o.notes,o.table_name,o.table_floor,o.total_cents AS gross_cents,o.courtesy_cents FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.order_id=$1",
         [id],
       )
     ).rows[0];
@@ -750,7 +755,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       payment,
       items: (
         await db.query(
-          "SELECT name,quantity,price_cents,notes FROM order_items WHERE order_id=$1",
+          "SELECT i.product_id,i.name,i.quantity,i.price_cents,i.notes,coalesce(cq.quantity,0) AS courtesy_quantity FROM order_items i LEFT JOIN courtesy_quantities cq ON cq.order_id=i.order_id AND cq.product_id=i.product_id WHERE i.order_id=$1",
           [id],
         )
       ).rows,
@@ -763,6 +768,101 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         await db.query(
           "SELECT (created_at AT TIME ZONE 'America/Guatemala')::date AS day,method,count(*) AS sales,sum(amount_cents) AS total_cents FROM payments GROUP BY day,method ORDER BY day DESC LIMIT 90",
         )
+      ).rows,
+    );
+  });
+  app.post("/api/courtesies", p("courtesies.create"), async (req, res) => {
+    const input = z
+      .object({
+        orderId: idSchema,
+        version: z.number().int().positive(),
+        reason: z.string().trim().min(3).max(300),
+        items: z
+          .array(
+            z
+              .object({
+                productId: idSchema,
+                quantity: z.number().int().min(1).max(100),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(50)
+          .refine(
+            (items) =>
+              new Set(items.map((i) => i.productId)).size === items.length,
+          ),
+      })
+      .strict()
+      .parse(req.body);
+    const result = await transaction(db, (tx) =>
+      idempotent(tx, req, "courtesy", input, async () => {
+        const s = await shift(tx, req);
+        const o = await ownedOrder(tx, req, input.orderId);
+        if (
+          o.status === "CANCELADO" ||
+          (await tx.query("SELECT 1 FROM payments WHERE order_id=$1", [o.id]))
+            .rowCount
+        )
+          fail(
+            409,
+            "ORDER_SETTLED",
+            "No se puede autorizar cortesía en una orden cancelada o liquidada",
+          );
+        if (o.version !== input.version)
+          fail(
+            409,
+            "STALE_ORDER",
+            "La orden cambió. Revisa las cantidades actuales",
+          );
+        const record = (
+          await tx.query<{ id: string; amount_cents: number }>(
+            `INSERT INTO order_courtesies(order_id,shift_id,user_id,reason,items,amount_cents) VALUES($1,$2,$3,$4,$5,0) RETURNING *`,
+            [
+              o.id,
+              s.id,
+              identity(req).id,
+              input.reason,
+              JSON.stringify(input.items),
+            ],
+          )
+        ).rows[0]!;
+        const updated = (
+          await tx.query<Order>("SELECT * FROM orders WHERE id=$1", [o.id])
+        ).rows[0]!;
+        if (updated.total_cents === updated.courtesy_cents) {
+          await tx.query(
+            "INSERT INTO payments(order_id,shift_id,user_id,method,amount_cents,tendered_cents,change_cents) VALUES($1,$2,$3,'CORTESIA',0,0,0)",
+            [o.id, s.id, identity(req).id],
+          );
+        }
+        await audit(
+          tx,
+          req,
+          "COURTESY_AUTHORIZED",
+          "courtesies",
+          record.id,
+          "SUCCESS",
+          undefined,
+          {
+            orderId: o.id,
+            shiftId: s.id,
+            amountCents: record.amount_cents,
+            reason: input.reason,
+          },
+        );
+        await changed(tx);
+        return record;
+      }),
+    );
+    res.status(201).json(result);
+  });
+  app.get("/api/courtesies", p("reports.read"), async (_req, res) => {
+    res.json(
+      (
+        await db.query(`SELECT c.id,c.reason,c.amount_cents,c.created_at,c.shift_id,o.number,o.table_name,o.table_floor,u.name AS authorized_by,
+      (SELECT json_agg(json_build_object('name',i.name,'quantity',a->>'quantity')) FROM jsonb_array_elements(c.items) a JOIN order_items i ON i.order_id=c.order_id AND i.product_id=(a->>'productId')::uuid) AS items
+      FROM order_courtesies c JOIN orders o ON o.id=c.order_id JOIN users u ON u.id=c.user_id ORDER BY c.created_at DESC LIMIT 100`)
       ).rows,
     );
   });
@@ -781,9 +881,14 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       ).rows,
     ),
   );
-  app.get("/api/roles", p("users.manage"), async (_req, res) =>
+  app.get("/api/roles", p("users.manage"), async (req, res) =>
     res.json({
-      roles: (await db.query("SELECT * FROM roles ORDER BY name")).rows,
+      roles: (
+        await db.query(
+          "SELECT * FROM roles WHERE name<>'SUPERADMIN' OR $1 ORDER BY name",
+          [identity(req).permissions.includes("roles.superadmin.manage")],
+        )
+      ).rows,
       permissions: (
         await db.query(
           "SELECT * FROM role_permissions ORDER BY role,permission",
@@ -804,6 +909,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       })
       .strict()
       .parse(req.body);
+    if (
+      input.role === "SUPERADMIN" &&
+      !identity(req).permissions.includes("roles.superadmin.manage")
+    )
+      fail(403, "FORBIDDEN", "Solo un superadmin puede asignar este rol");
     const hash = await passwordHash(input.password);
     const result = await transaction(db, async (tx) => {
       const u = (
@@ -838,13 +948,23 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         )
       ).rows[0];
       if (
-        previous?.role === "ADMINISTRADOR" &&
+        (input.role === "SUPERADMIN" || previous?.role === "SUPERADMIN") &&
+        !identity(req).permissions.includes("roles.superadmin.manage")
+      )
+        fail(
+          403,
+          "FORBIDDEN",
+          "Solo un superadmin puede modificar esta cuenta",
+        );
+      if (
+        previous &&
+        ["ADMINISTRADOR", "SUPERADMIN"].includes(previous.role) &&
         previous.active &&
         previous.mfa_enabled &&
-        (input.role !== "ADMINISTRADOR" || !input.active)
+        (!["ADMINISTRADOR", "SUPERADMIN"].includes(input.role) || !input.active)
       ) {
         const remaining = await tx.query(
-          "SELECT id FROM users WHERE role='ADMINISTRADOR' AND active AND mfa_enabled AND id<>$1 LIMIT 1",
+          "SELECT id FROM users WHERE role IN ('ADMINISTRADOR','SUPERADMIN') AND active AND mfa_enabled AND id<>$1 LIMIT 1",
           [id],
         );
         if (!remaining.rowCount)

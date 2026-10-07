@@ -293,4 +293,39 @@ describe("exclusive table selection before order creation", () => {
     );
     expect((await status(a)).blocked !== (await status(b)).blocked).toBe(true);
   });
+  it("limits two drafts while allowing atomic table changes and excluding own open orders", async () => {
+    const third = (
+      await context.db.query(
+        "INSERT INTO restaurant_tables(name) VALUES($1) RETURNING id",
+        [randomUUID()],
+      )
+    ).rows[0].id as string;
+    const firstClaim = randomUUID();
+    expect((await claim(a, table, firstClaim)).status).toBe(200);
+    expect((await claim(a, second)).status).toBe(200);
+    const refused = await claim(a, third);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe("TABLE_CLAIM_LIMIT");
+    const nextClaim = randomUUID();
+    expect(
+      (
+        await post(a, `/api/tables/${third}/claim`, {
+          claimId: nextClaim,
+          previous: { tableId: table, claimId: firstClaim },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await status(b, table)).blocked).toBe(false);
+    expect(
+      (
+        await post(a, "/api/orders", {
+          tableId: third,
+          claimId: nextClaim,
+          items: [{ productId: product, quantity: 1 }],
+        })
+      ).status,
+    ).toBe(201);
+    expect((await claim(a, third)).status).toBe(200);
+    expect((await claim(a, table)).status).toBe(200);
+  });
 });

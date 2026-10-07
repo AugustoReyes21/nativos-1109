@@ -101,6 +101,10 @@ export function tableClaims(
       const input = acquireInput.parse(req.body);
       const me = identity(req);
       const result = await transaction(db, async (tx) => {
+        // Serialize the quota across concurrent selections of different tables.
+        await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
+          `table-claim-quota:${me.sessionId}`,
+        ]);
         // Sorted table locks prevent deadlocks when two users change tables.
         await lockTables(
           tx,
@@ -126,6 +130,26 @@ export function tableClaims(
               me.sessionId,
             ],
           );
+        }
+        const ownOrder = await tx.query(
+          `SELECT 1 FROM orders WHERE table_id=$1 AND user_id=$2 AND
+          (status IN ('PENDIENTE','EN_PREPARACION','LISTO') OR (status='ENTREGADO' AND paid_at IS NULL)) LIMIT 1`,
+          [id, me.id],
+        );
+        if (!ownOrder.rowCount) {
+          const count = await tx.query<{ count: number }>(
+            `SELECT count(*)::int AS count FROM table_claims c
+            WHERE c.session_id=$1 AND c.table_id<>$2 AND c.expires_at>clock_timestamp()
+            AND NOT EXISTS(SELECT 1 FROM orders o WHERE o.table_id=c.table_id AND o.user_id=$3 AND
+              (o.status IN ('PENDIENTE','EN_PREPARACION','LISTO') OR (o.status='ENTREGADO' AND o.paid_at IS NULL)))`,
+            [me.sessionId, id, me.id],
+          );
+          if (count.rows[0]!.count >= 2)
+            fail(
+              409,
+              "TABLE_CLAIM_LIMIT",
+              "Puedes reservar hasta dos mesas sin pedido. Libera una o envía su orden antes de continuar",
+            );
         }
         const r = (
           await tx.query<{ expires_at: Date }>(
