@@ -15,6 +15,7 @@ export type Product = {
   stock: number;
   version: number;
   active: boolean;
+  description: string;
 };
 export type Named = { id: string; name: string };
 export type DiningTable = Named & {
@@ -35,6 +36,7 @@ export type Item = {
   quantity: number;
   price_cents: number;
   notes: string;
+  courtesy_quantity: number;
 };
 export type Order = {
   id: string;
@@ -44,6 +46,7 @@ export type Order = {
   table_floor: 1 | 2;
   status: string;
   total_cents: number;
+  courtesy_cents: number;
   version: number;
   notes: string;
   items: Item[];

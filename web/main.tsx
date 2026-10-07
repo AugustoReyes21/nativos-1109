@@ -598,7 +598,12 @@ function App() {
           />
         )}
         {view === "admin" && (
-          <AdminView busy={busy || !connected} run={run} reload={reload} />
+          <AdminView
+            busy={busy || !connected}
+            run={run}
+            reload={reload}
+            canManageSuper={can("roles.superadmin.manage")}
+          />
         )}
         {view === "seguridad" && (
           <section className="panel narrow">

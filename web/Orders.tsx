@@ -30,6 +30,8 @@ export function Orders({
     payment: {
       number: string;
       amount_cents: number;
+      gross_cents: number;
+      courtesy_cents: number;
       method: string;
       change_cents: number;
       table_name: string;
@@ -60,6 +62,39 @@ export function Orders({
     });
   };
   const kitchen = can("kitchen.update") && !can("products.write");
+  const courtesy = (e: FormEvent<HTMLFormElement>, o: Order) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    const items = o.items
+      .map((i) => ({
+        productId: i.product_id,
+        quantity: Number(data.get(i.product_id) ?? 0),
+      }))
+      .filter((i) => i.quantity > 0);
+    if (!items.length) {
+      form
+        .querySelector<HTMLInputElement>('input[type="number"]')
+        ?.setCustomValidity("Selecciona al menos una unidad de cortesía.");
+      form.reportValidity();
+      return;
+    }
+    if (
+      !window.confirm(
+        "¿Autorizar esta cortesía? Quedará registrada y no se puede borrar ni cancelar la orden después.",
+      )
+    )
+      return;
+    void run(async () => {
+      await mutate("/courtesies", {
+        orderId: o.id,
+        version: o.version,
+        reason: data.get("reason"),
+        items,
+      });
+      await reload();
+    });
+  };
   return (
     <>
       <div className="section-heading">
@@ -106,15 +141,32 @@ export function Orders({
                       {i.quantity} × {i.name}
                     </strong>
                     {i.notes && <small>{i.notes}</small>}
+                    {i.courtesy_quantity > 0 && (
+                      <small>{i.courtesy_quantity} de cortesía</small>
+                    )}
                     <span>{money(i.quantity * i.price_cents)}</span>
                   </li>
                 ))}
               </ul>
               {o.notes && <p className="order-note">{o.notes}</p>}
               <div className="row">
-                <strong>Total {money(o.total_cents)}</strong>
-                <span>{o.paid ? "Pagada" : "Por cobrar"}</span>
+                <strong>
+                  Total neto {money(o.total_cents - o.courtesy_cents)}
+                </strong>
+                <span>
+                  {o.paid
+                    ? o.courtesy_cents === o.total_cents
+                      ? "Liquidada por cortesía"
+                      : "Pagada"
+                    : "Por cobrar"}
+                </span>
               </div>
+              {o.courtesy_cents > 0 && (
+                <p>
+                  Consumo {money(o.total_cents)} · Cortesías{" "}
+                  {money(o.courtesy_cents)}
+                </p>
+              )}
               <div className="actions">
                 {can("kitchen.update") &&
                   ["PENDIENTE", "EN_PREPARACION"].includes(o.status) && (
@@ -140,6 +192,7 @@ export function Orders({
                 )}
                 {can("orders.cancel") &&
                   !o.paid &&
+                  o.courtesy_cents === 0 &&
                   ["PENDIENTE", "EN_PREPARACION", "LISTO"].includes(
                     o.status,
                   ) && (
@@ -159,11 +212,69 @@ export function Orders({
                     </button>
                   )}
               </div>
+              {can("courtesies.create") &&
+                !o.paid &&
+                o.status !== "CANCELADO" && (
+                  <details key={`courtesy:${o.courtesy_cents}`}>
+                    <summary>Autorizar cortesía</summary>
+                    <form onSubmit={(e) => courtesy(e, o)}>
+                      <p>
+                        Selecciona cantidades a regalar. El stock consumido se
+                        conserva y solo se cobrará el saldo restante.
+                      </p>
+                      {o.items
+                        .filter((i) => i.quantity > i.courtesy_quantity)
+                        .map((i) => (
+                          <label key={i.product_id}>
+                            Cortesía de {i.name} (máximo{" "}
+                            {i.quantity - i.courtesy_quantity})
+                            <input
+                              name={i.product_id}
+                              type="number"
+                              min="0"
+                              max={i.quantity - i.courtesy_quantity}
+                              step="1"
+                              defaultValue="0"
+                              onInput={(e) =>
+                                e.currentTarget.form
+                                  ?.querySelector<HTMLInputElement>(
+                                    'input[type="number"]',
+                                  )
+                                  ?.setCustomValidity("")
+                              }
+                              required
+                            />
+                          </label>
+                        ))}
+                      <label>
+                        Motivo de cortesía
+                        <input
+                          name="reason"
+                          minLength={3}
+                          maxLength={300}
+                          required
+                        />
+                      </label>
+                      <small>
+                        Indica al menos una unidad. Esta autorización es
+                        definitiva; revisa la orden antes de confirmar.
+                      </small>
+                      <button disabled={busy || !connected || !cashOpen}>
+                        Registrar cortesía
+                      </button>
+                      {!cashOpen && (
+                        <p>Abre la caja para registrar la cortesía.</p>
+                      )}
+                    </form>
+                  </details>
+                )}
               {can("payments.create") &&
                 !o.paid &&
                 o.status !== "CANCELADO" && (
                   <details>
-                    <summary>Cobrar {money(o.total_cents)}</summary>
+                    <summary>
+                      Cobrar {money(o.total_cents - o.courtesy_cents)}
+                    </summary>
                     <form onSubmit={(e) => pay(e, o)}>
                       <label>
                         Método
@@ -177,10 +288,14 @@ export function Orders({
                         Importe recibido (Q)
                         <input
                           name="amount"
+                          key={o.courtesy_cents}
                           type="number"
                           step="0.01"
-                          min={o.total_cents / 100}
-                          defaultValue={(o.total_cents / 100).toFixed(2)}
+                          min={(o.total_cents - o.courtesy_cents) / 100}
+                          defaultValue={(
+                            (o.total_cents - o.courtesy_cents) /
+                            100
+                          ).toFixed(2)}
                           required
                         />
                       </label>
@@ -229,9 +344,15 @@ export function Orders({
             {receipt.items.map((i, n) => (
               <p key={n}>
                 {i.quantity} × {i.name} · {money(i.quantity * i.price_cents)}
+                {i.courtesy_quantity > 0 &&
+                  ` · ${i.courtesy_quantity} de cortesía`}
               </p>
             ))}
-            <strong>Total {money(receipt.payment.amount_cents)}</strong>
+            <p>
+              Consumo {money(receipt.payment.gross_cents)} · Cortesías{" "}
+              {money(receipt.payment.courtesy_cents)}
+            </p>
+            <strong>Total cobrado {money(receipt.payment.amount_cents)}</strong>
             <p>
               {receipt.payment.method} · Cambio{" "}
               {money(receipt.payment.change_cents)}
