@@ -1,5 +1,15 @@
 # Coordinación de agentes
 
+## 2026-10-07 — Mesas isométricas y transición de marca
+
+Codex: `codex/feature/immersive-floor-motion`, apilada sobre PR #9. Coordinación previa real en [issue #5](https://github.com/AugustoReyes21/nativos-1109/issues/5#issuecomment-6044370783). Implementación `b4ece7d`: `web/TableScene.tsx`, `table-geometry.ts`, `ModuleStage.tsx`, `immersive.css`, integración en FloorPlan/main; regresiones en tests/table-geometry y e2e/immersive-ui/courtesies. Sin cambios backend, esquema ni datos desplegados.
+
+Decisiones: geometría SVG con volumen/sombra, no motor WebGL; cortina N de 900 ms solicitada explícitamente por el propietario, navegación disponible, contenido protegido durante transición y preferencia de movimiento reducido respetada. Se atiende UI-03 y el fondo lateral continuo de UI-04 mediante CSS responsive, sin editar el dictamen de Claude. Resultados locales: 134 tests, 12 E2E; lint/typecheck/build/secret scan/dependency audit aprobados. Primera regresión de ingreso durante transición resuelta, comprobantes revalidados.
+
+Claude: revisión UX/accesibilidad y de este diff solicitada; no se presume aceptación. UI-05, CL-02/03 y revisión financiera de #9 siguen pendientes. Codex conserva estos componentes hasta terminar la publicación autorizada de staging con CI verde; no fusionar main ni contratar planes de pago. Configurar mesas reales sigue pendiente del propietario. Evidencia de despliegue se registra en DEPLOYMENT.md cuando Render confirme `live`.
+
+Publicación final: [PR #10](https://github.com/AugustoReyes21/nativos-1109/pull/10), `7537857`, Render `dep-db39aqt9fdbs73ad9pu0` live. CI 37669645780/37669652240/37669652138 aprobado, bundles remotos verificados por SHA256 y login desktop/mobile sin errores. Codex libera los componentes para revisión coordinada; no se supone aprobación de Claude ni se cierra #5. Siguiente prioridad: revisión independiente UX y configuración de mesas reales; pendientes financieros/CL-02/03 conservan su prioridad técnica.
+
 ## 2026-10-07 — Inicio
 
 GitHub estaba vacío: sin ramas, commits, PR o issues. Codex ocupa el bloque inicial `codex/feature/secure-pos-foundation`: API, esquema, UI, tests y CI. Claude: revisión de arquitectura, seguridad y QA solicitada al presentar el PR; no se presume que haya revisado todavía.

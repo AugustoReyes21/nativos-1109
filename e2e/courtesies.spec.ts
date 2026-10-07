@@ -138,6 +138,11 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
           .click();
         await expect(page.getByRole("dialog")).toContainText("Cortesías");
         await expect(page.getByRole("dialog")).toContainText("1 de cortesía");
+        await page.emulateMedia({ media: "print" });
+        await expect(page.locator(".receipt")).toBeVisible();
+        await expect(page.locator(".order-grid")).not.toBeVisible();
+        await expect(page.locator(".section-heading")).not.toBeVisible();
+        await page.emulateMedia({ media: "screen" });
         await page.getByRole("button", { name: "Cerrar", exact: true }).click();
       } else {
         await expect(

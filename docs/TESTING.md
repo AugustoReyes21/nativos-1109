@@ -1,5 +1,17 @@
 # Verificación
 
+## Mesas isométricas y transición N — 2026-10-07
+
+Validación local del bloque `b4ece7d`: **134/134 pruebas en 13 suites** y **12/12 E2E** Chromium, escritorio/tablet/móvil. Lint, typecheck, build, escaneo de secretos y npm audit pasan; auditoría de dependencias reporta 0 vulnerabilidades. No se agregaron dependencias. Bundle: JS 123.63 KB gzip, CSS 7.15 KB gzip.
+
+Nuevas regresiones: geometría de las tres formas, 1–12 asientos y orden de profundidad; IDs SVG únicos; transición de 900 ms con contenido temporalmente inerte; navegación rápida y repetida; foco al terminar; reduced-motion sin cortina; selección con teclado y reserva conservada al navegar; sin overflow en plano/lista. La suite de cortesías también comprueba que imprimir mantiene el comprobante visible y oculta las órdenes/encabezados con el nuevo contenedor. Las reglas axe de contraste/nombre visible existentes siguen pasando. Capturas `isometric-*` y `transition-*` revisadas localmente; son fixtures aislados, no datos del restaurante.
+
+Primera ejecución detectó que `inert` por sí solo no impedía a la automatización intentar rellenar formularios antes del fin de la transición, perdiendo datos. Se corrigió el componente con `fieldset disabled` durante la animación, preservando el bloqueo semántico y de teclado; se reejecutó la suite completa con 12 aprobados, sin sleeps añadidos ni aserciones retiradas. Se corrigieron preventivamente los selectores de impresión y tamaños de SVG en lista.
+
+Continúa el aviso conocido de listeners en el fixture concurrente de Supertest, no suprimido. No prueba Safari/iOS real, impresión física ni rendimiento de GPU en hardware del restaurante. CI remoto, despliegue y revisión de Claude se registran separadamente después de verificarse.
+
+Resultado remoto final `7537857`: CI 37669645780/37669652240 y ZAP 37669652138 aprobados. Despliegue `dep-db39aqt9fdbs73ad9pu0` live; tres health checks 200 con HSTS, JS/CSS idénticos por SHA256 a los probados. Smoke público remoto escritorio/móvil sin errores ni overflow. Revisión independiente sigue pendiente; no se ejecutaron ventas sintéticas en Render.
+
 ## Selección exclusiva antes de crear órdenes — 2026-10-07
 
 `tests/table-claims.test.ts` añade nueve casos con PostgreSQL real: clics simultáneos, bloqueo sin orden, API directa, RBAC/CSRF, UUID/replay, expiración, renovación/liberación atrasadas, cambio atómico, logout, orden activa y conservación del intento idempotente entre generaciones. Suite completa: **103/103** pasan.

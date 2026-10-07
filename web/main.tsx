@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import { Auth } from "./Auth";
 import { NewOrder, emptyDraft } from "./NewOrder";
 import { FloorPlan } from "./FloorPlan";
+import { ModuleStage } from "./ModuleStage";
 import { Icon, type IconName } from "./Icon";
 import type { TableStatus } from "./table-state";
 import { MotionConfig } from "motion/react";
@@ -18,6 +19,17 @@ import {
 } from "./types";
 import "./style.css";
 import "./experience.css";
+import "./immersive.css";
+
+const moduleNames: Record<string, string> = {
+  salon: "Salón y mesas",
+  nueva: "Nueva orden",
+  ordenes: "Órdenes",
+  catalogo: "Productos y mesas",
+  caja: "Caja",
+  admin: "Administración",
+  seguridad: "Mi seguridad",
+};
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -505,128 +517,130 @@ function App() {
       </nav>
       <main className="content" ref={contentRef} tabIndex={-1}>
         {feedback}
-        {view === "salon" && (
-          <FloorPlan
-            tables={catalog.tables}
-            statuses={tableStatuses}
-            floor={floor}
-            setFloor={setFloor}
-            canCreate={can("orders.create")}
-            busy={busy}
-            connected={connected}
-            configure={
-              can("settings.manage") ? () => setView("catalogo") : undefined
-            }
-            select={(table) => {
-              if (can("orders.create")) {
-                void changeTable(table.id, true);
-              } else {
-                setOrderTable(table.id);
+        <ModuleStage key={view} name={moduleNames[view] ?? "Nativos"}>
+          {view === "salon" && (
+            <FloorPlan
+              tables={catalog.tables}
+              statuses={tableStatuses}
+              floor={floor}
+              setFloor={setFloor}
+              canCreate={can("orders.create")}
+              busy={busy}
+              connected={connected}
+              configure={
+                can("settings.manage") ? () => setView("catalogo") : undefined
+              }
+              select={(table) => {
+                if (can("orders.create")) {
+                  void changeTable(table.id, true);
+                } else {
+                  setOrderTable(table.id);
+                  setView("ordenes");
+                }
+              }}
+            />
+          )}
+          {view === "ordenes" && orderTable && (
+            <div className="table-context">
+              <span>
+                Órdenes visibles de{" "}
+                {catalog.tables.find((t) => t.id === orderTable)?.name}
+              </span>
+              <button className="secondary" onClick={() => setOrderTable(null)}>
+                Ver todas las órdenes
+              </button>
+            </div>
+          )}
+          {view === "ordenes" && (
+            <Orders
+              orders={
+                orderTable
+                  ? orders.filter((o) => o.table_id === orderTable)
+                  : orders
+              }
+              can={can}
+              busy={busy}
+              connected={connected}
+              run={run}
+              mutate={mutate}
+              reload={reload}
+              cashOpen={cash.some((s) => !s.closed_at)}
+            />
+          )}
+          {view === "nueva" && (
+            <NewOrder
+              catalog={catalog}
+              draft={draft}
+              setDraft={setDraft}
+              statuses={tableStatuses}
+              discard={discard}
+              changeTable={changeTable}
+              status={tableStatuses.find((s) => s.tableId === draft.tableId)}
+              back={() => setView("salon")}
+              viewOrders={() => {
+                setOrderTable(draft.tableId);
                 setView("ordenes");
-              }
-            }}
-          />
-        )}
-        {view === "ordenes" && orderTable && (
-          <div className="table-context">
-            <span>
-              Órdenes visibles de{" "}
-              {catalog.tables.find((t) => t.id === orderTable)?.name}
-            </span>
-            <button className="secondary" onClick={() => setOrderTable(null)}>
-              Ver todas las órdenes
-            </button>
-          </div>
-        )}
-        {view === "ordenes" && (
-          <Orders
-            orders={
-              orderTable
-                ? orders.filter((o) => o.table_id === orderTable)
-                : orders
-            }
-            can={can}
-            busy={busy}
-            connected={connected}
-            run={run}
-            mutate={mutate}
-            reload={reload}
-            cashOpen={cash.some((s) => !s.closed_at)}
-          />
-        )}
-        {view === "nueva" && (
-          <NewOrder
-            catalog={catalog}
-            draft={draft}
-            setDraft={setDraft}
-            statuses={tableStatuses}
-            discard={discard}
-            changeTable={changeTable}
-            status={tableStatuses.find((s) => s.tableId === draft.tableId)}
-            back={() => setView("salon")}
-            viewOrders={() => {
-              setOrderTable(draft.tableId);
-              setView("ordenes");
-            }}
-            busy={busy}
-            connected={connected}
-            run={run}
-            mutate={mutate}
-            done={async () => {
-              setView("ordenes");
-              setOrderTable(null);
-              await reload();
-            }}
-          />
-        )}
-        {view === "catalogo" && (
-          <CatalogView
-            catalog={catalog}
-            busy={busy || !connected}
-            run={run}
-            mutate={mutate}
-            reload={reload}
-          />
-        )}
-        {view === "caja" && (
-          <CashView
-            cash={cash}
-            busy={busy || !connected}
-            run={run}
-            mutate={mutate}
-            reload={reload}
-          />
-        )}
-        {view === "admin" && (
-          <AdminView
-            busy={busy || !connected}
-            run={run}
-            reload={reload}
-            canManageSuper={can("roles.superadmin.manage")}
-          />
-        )}
-        {view === "seguridad" && (
-          <section className="panel narrow">
-            <h1>Mi seguridad</h1>
-            <p>MFA: {user.mfa_enabled ? "Activo" : "Sin activar"}</p>
-            <p>
-              Las sesiones expiran a las 12 horas. Cierra todas tus sesiones si
-              pierdes un dispositivo.
-            </p>
-            <button
-              className="danger"
-              onClick={() =>
-                void run(async () => {
-                  await api("/auth/logout-all", "POST", {});
-                  setUser(null);
-                  setDraft(emptyDraft());
-                })
-              }
-            >
-              Cerrar todas mis sesiones
-            </button>
-          </section>
-        )}
+              }}
+              busy={busy}
+              connected={connected}
+              run={run}
+              mutate={mutate}
+              done={async () => {
+                setView("ordenes");
+                setOrderTable(null);
+                await reload();
+              }}
+            />
+          )}
+          {view === "catalogo" && (
+            <CatalogView
+              catalog={catalog}
+              busy={busy || !connected}
+              run={run}
+              mutate={mutate}
+              reload={reload}
+            />
+          )}
+          {view === "caja" && (
+            <CashView
+              cash={cash}
+              busy={busy || !connected}
+              run={run}
+              mutate={mutate}
+              reload={reload}
+            />
+          )}
+          {view === "admin" && (
+            <AdminView
+              busy={busy || !connected}
+              run={run}
+              reload={reload}
+              canManageSuper={can("roles.superadmin.manage")}
+            />
+          )}
+          {view === "seguridad" && (
+            <section className="panel narrow">
+              <h1>Mi seguridad</h1>
+              <p>MFA: {user.mfa_enabled ? "Activo" : "Sin activar"}</p>
+              <p>
+                Las sesiones expiran a las 12 horas. Cierra todas tus sesiones
+                si pierdes un dispositivo.
+              </p>
+              <button
+                className="danger"
+                onClick={() =>
+                  void run(async () => {
+                    await api("/auth/logout-all", "POST", {});
+                    setUser(null);
+                    setDraft(emptyDraft());
+                  })
+                }
+              >
+                Cerrar todas mis sesiones
+              </button>
+            </section>
+          )}
+        </ModuleStage>
       </main>
     </div>
   );

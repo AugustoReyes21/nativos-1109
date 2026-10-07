@@ -9,7 +9,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    branch: codex/feature/menu-superadmin-courtesies
+    branch: codex/feature/immersive-floor-motion
     buildCommand: npm ci --include=dev && npm run build
     startCommand: node dist/server/migrate.js && node dist/server/main.js
     healthCheckPath: /health/ready

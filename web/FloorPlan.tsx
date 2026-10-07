@@ -8,45 +8,10 @@ import {
   type TableStatus,
 } from "./table-state";
 import { Icon } from "./Icon";
+import { TableScene } from "./TableScene";
 
 export function TableDrawing({ table }: { table: DiningTable }) {
-  const round = table.shape === "round";
-  const wide = table.shape === "rectangle";
-  const chairs = Array.from({ length: table.capacity }, (_, i) => {
-    const angle = (i / table.capacity) * Math.PI * 2 - Math.PI / 2;
-    return (
-      <rect
-        key={i}
-        x={80 + Math.cos(angle) * (wide ? 65 : 54) - 10}
-        y={70 + Math.sin(angle) * 53 - 6}
-        width="20"
-        height="12"
-        rx="5"
-        transform={`rotate(${(angle * 180) / Math.PI + 90} ${80 + Math.cos(angle) * (wide ? 65 : 54)} ${70 + Math.sin(angle) * 53})`}
-        className="table-chair"
-      />
-    );
-  });
-  return (
-    <svg viewBox="0 0 160 140" className="table-drawing" aria-hidden="true">
-      {chairs}
-      <rect
-        x={wide ? 25 : 39}
-        y="29"
-        width={wide ? 110 : 82}
-        height="82"
-        rx={round ? 41 : 15}
-        className="table-top"
-      />
-      <path
-        d="M73 59h14m-7-7v14"
-        className="table-center"
-        fill="none"
-        strokeWidth="1.5"
-      />
-      <circle cx="80" cy="84" r="3" className="table-center-dot" />
-    </svg>
-  );
+  return <TableScene table={table} />;
 }
 
 export function FloorPlan({
@@ -184,13 +149,13 @@ export function FloorPlan({
         </div>
         <motion.div
           key={`${floor}:${list}`}
-          initial={reduced ? false : { opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18 }}
+          initial={reduced ? false : { opacity: 0, x: floor === 2 ? 28 : -28 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
           className={list ? "table-list" : "table-plan"}
           aria-label={`Mesas del nivel ${floor}`}
         >
-          {shown.map((table) => {
+          {shown.map((table, index) => {
             const status = statusFor(table.id);
             const state = status?.state;
             const label = state ? tableStateLabels[state] : "Sin sincronizar";
@@ -202,6 +167,12 @@ export function FloorPlan({
                   busy || !connected || !status || (canCreate && status.blocked)
                 }
                 whileTap={reduced ? undefined : { scale: 0.98 }}
+                initial={reduced ? false : { opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.32,
+                  delay: reduced ? 0 : Math.min(index, 7) * 0.035,
+                }}
                 onClick={() => select(table)}
               >
                 <span className={`table-state ${state ?? ""}`}>
