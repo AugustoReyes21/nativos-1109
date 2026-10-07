@@ -11,6 +11,12 @@ import {
 } from "./common.js";
 import { passwordHash, passwordSchema, total } from "./security.js";
 import type { auth } from "./auth.js";
+import {
+  tableClaims,
+  lockTables,
+  assertTableAccess,
+  releaseAfterOrder,
+} from "./table-claims.js";
 
 type Product = {
   id: string;
@@ -63,6 +69,7 @@ const itemsSchema = z
 const orderSchema = z
   .object({
     tableId: idSchema,
+    claimId: idSchema.optional(),
     notes: z.string().trim().max(500).default(""),
     items: itemsSchema,
   })
@@ -99,6 +106,7 @@ async function ownedOrder(tx: TX, req: Request, id: string) {
 export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   const p = security.permit;
   app.use("/api", security.requireUser);
+  tableClaims(app, db, security);
   app.get("/api/catalog", p("products.read"), async (_req, res) => {
     const [products, categories, tables] = await Promise.all([
       db.query("SELECT * FROM products ORDER BY name"),
@@ -131,17 +139,22 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       UNION ALL
       SELECT id,table_id,user_id,status,paid_at,total_cents,created_at FROM orders
       WHERE status='ENTREGADO' AND paid_at IS NULL
-    ) SELECT t.id AS "tableId",
-      CASE WHEN count(o.id)=0 THEN 'available'
+    ), claims AS (SELECT c.* FROM table_claims c JOIN sessions s ON s.id=c.session_id
+      WHERE c.expires_at>clock_timestamp() AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp())
+    SELECT t.id AS "tableId",
+      CASE WHEN count(o.id)=0 THEN CASE WHEN c.table_id IS NOT NULL THEN 'reserved' ELSE 'available' END
         WHEN bool_or(o.status='LISTO') THEN 'ready'
         WHEN bool_or(o.status='ENTREGADO' AND o.paid_at IS NULL) THEN 'payment'
         ELSE 'service' END AS state,
       count(o.id)::int AS "openOrders", min(o.created_at) AS since,
       coalesce(bool_or(o.user_id=$1),false) AS mine,
+      (coalesce(bool_or(o.user_id<>$1),false) OR (c.table_id IS NOT NULL AND (c.user_id<>$1 OR c.session_id<>$3))) AS "blocked",
+      CASE WHEN c.user_id=$1 AND c.session_id=$3 THEN c.claim_id END AS "claimId",
+      c.expires_at AS "claimExpiresAt",
       CASE WHEN $2 THEN coalesce(sum(o.total_cents) FILTER (WHERE o.paid_at IS NULL),0) END AS "pendingCents"
-      FROM restaurant_tables t LEFT JOIN active o ON o.table_id=t.id WHERE t.active
-      GROUP BY t.id ORDER BY t.floor,t.display_order,t.name`,
-      [me.id, me.permissions.includes("payments.create")],
+      FROM restaurant_tables t LEFT JOIN active o ON o.table_id=t.id LEFT JOIN claims c ON c.table_id=t.id WHERE t.active
+      GROUP BY t.id,c.table_id,c.user_id,c.session_id,c.claim_id,c.expires_at ORDER BY t.floor,t.display_order,t.name`,
+      [me.id, me.permissions.includes("payments.create"), me.sessionId],
     );
     res.json(
       result.rows.map(({ pendingCents, ...row }) =>
@@ -380,76 +393,77 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   app.post("/api/orders", p("orders.create"), async (req, res) => {
     const input = orderSchema.parse(req.body);
     const result = await transaction(db, (tx) =>
-      idempotent(tx, req, "create-order", input, async () => {
-        if (
-          !(
-            await tx.query(
-              "SELECT id FROM restaurant_tables WHERE id=$1 AND active FOR SHARE",
-              [input.tableId],
+      idempotent(
+        tx,
+        req,
+        "create-order",
+        // Preserve the pre-lease canonical field order for existing retry hashes.
+        { tableId: input.tableId, notes: input.notes, items: input.items },
+        async () => {
+          await lockTables(tx, [input.tableId]);
+          await assertTableAccess(tx, req, input.tableId, input.claimId);
+          const products = (
+            await tx.query<Product>(
+              "SELECT * FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE",
+              [input.items.map((i) => i.productId)],
             )
-          ).rowCount
-        )
-          fail(400, "INVALID_TABLE", "Mesa no disponible");
-        const products = (
-          await tx.query<Product>(
-            "SELECT * FROM products WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE",
-            [input.items.map((i) => i.productId)],
-          )
-        ).rows;
-        const items = input.items.map((item) => {
-          const product = products.find((p) => p.id === item.productId);
-          if (!product?.active || product.stock < item.quantity)
-            return fail(
-              409,
-              "PRODUCT_OUT_OF_STOCK",
-              "El producto ya no está disponible",
+          ).rows;
+          const items = input.items.map((item) => {
+            const product = products.find((p) => p.id === item.productId);
+            if (!product?.active || product.stock < item.quantity)
+              return fail(
+                409,
+                "PRODUCT_OUT_OF_STOCK",
+                "El producto ya no está disponible",
+              );
+            return {
+              ...item,
+              name: product.name,
+              price_cents: product.price_cents,
+            };
+          });
+          const order = (
+            await tx.query<Order>(
+              "INSERT INTO orders(table_id,user_id,total_cents,notes) VALUES ($1,$2,$3,$4) RETURNING *",
+              [input.tableId, identity(req).id, total(items), input.notes],
+            )
+          ).rows[0]!;
+          for (const item of items) {
+            await tx.query(
+              "UPDATE products SET stock=stock-$1,version=version+1,updated_at=now() WHERE id=$2",
+              [item.quantity, item.productId],
             );
-          return {
-            ...item,
-            name: product.name,
-            price_cents: product.price_cents,
-          };
-        });
-        const order = (
-          await tx.query<Order>(
-            "INSERT INTO orders(table_id,user_id,total_cents,notes) VALUES ($1,$2,$3,$4) RETURNING *",
-            [input.tableId, identity(req).id, total(items), input.notes],
-          )
-        ).rows[0]!;
-        for (const item of items) {
-          await tx.query(
-            "UPDATE products SET stock=stock-$1,version=version+1,updated_at=now() WHERE id=$2",
-            [item.quantity, item.productId],
+            await tx.query(
+              "INSERT INTO order_items(order_id,product_id,name,quantity,price_cents,notes) VALUES ($1,$2,$3,$4,$5,$6)",
+              [
+                order.id,
+                item.productId,
+                item.name,
+                item.quantity,
+                item.price_cents,
+                item.notes,
+              ],
+            );
+          }
+          await audit(
+            tx,
+            req,
+            "ORDER_CREATED",
+            "orders",
+            order.id,
+            "SUCCESS",
+            undefined,
+            {
+              tableId: input.tableId,
+              totalCents: order.total_cents,
+              items: items.length,
+            },
           );
-          await tx.query(
-            "INSERT INTO order_items(order_id,product_id,name,quantity,price_cents,notes) VALUES ($1,$2,$3,$4,$5,$6)",
-            [
-              order.id,
-              item.productId,
-              item.name,
-              item.quantity,
-              item.price_cents,
-              item.notes,
-            ],
-          );
-        }
-        await audit(
-          tx,
-          req,
-          "ORDER_CREATED",
-          "orders",
-          order.id,
-          "SUCCESS",
-          undefined,
-          {
-            tableId: input.tableId,
-            totalCents: order.total_cents,
-            items: items.length,
-          },
-        );
-        await changed(tx);
-        return order;
-      }),
+          await releaseAfterOrder(tx, req, input.tableId, input.claimId);
+          await changed(tx);
+          return order;
+        },
+      ),
     );
     res.status(201).json(result);
   });
