@@ -63,7 +63,7 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
       "Órdenes",
       "Caja",
       "Productos y mesas",
-      "Administración",
+      "Usuarios",
     ])
       await expect(
         page.getByRole("button", { name, exact: true }),
@@ -81,6 +81,9 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
       .getByRole("button", { name: `Guardar ${product.name}`, exact: true })
       .click();
     await page.getByRole("button", { name: "Caja", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Apertura y cierre", exact: true })
+      .click();
     await page.getByLabel("Fondo inicial (Q)").fill("0");
     await page.getByRole("button", { name: "Abrir caja", exact: true }).click();
     await expect(
@@ -129,6 +132,10 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
         .click();
       if (quantity === 2) {
         await expect(ticket).toContainText("1 de cortesía");
+        await ticket
+          .getByRole("button", { name: "Enviar a caja", exact: true })
+          .click();
+        await page.getByRole("button", { name: "Caja", exact: true }).click();
         await ticket.locator("summary").filter({ hasText: "Cobrar" }).click();
         await expect(ticket.getByLabel("Importe recibido (Q)")).toHaveValue(
           (product.price_cents / 100).toFixed(2),
@@ -165,18 +172,14 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
       { method: "CORTESIA", amount_cents: 0 },
       { method: "EFECTIVO", amount_cents: product.price_cents },
     ]);
-    await page
-      .getByRole("button", { name: "Administración", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Usuarios", exact: true }).click();
     await expect(
       page
         .getByRole("combobox", { name: "Rol", exact: true })
         .locator("option")
         .filter({ hasText: "SUPERADMIN" }),
     ).toHaveCount(1);
-    await page
-      .getByRole("button", { name: "Consultar usuarios, ventas y bitácora" })
-      .click();
+    await page.getByRole("button", { name: "Cortesías", exact: true }).click();
     await expect(
       page.locator("article").filter({ hasText: `Cortesía-${tag}` }),
     ).toHaveCount(2);
@@ -191,10 +194,13 @@ test("superadmin configures PDF stock and records partial and full courtesies", 
     });
     await page.getByRole("button", { name: "Caja", exact: true }).click();
     await page
+      .getByRole("button", { name: "Apertura y cierre", exact: true })
+      .click();
+    await page
       .getByLabel("Efectivo contado (Q)")
       .fill((product.price_cents / 100).toFixed(2));
     await page
-      .getByRole("button", { name: "Cerrar caja", exact: true })
+      .getByRole("button", { name: "Autorizar y cerrar caja", exact: true })
       .click();
     await expect(
       page.getByRole("heading", { name: "Abrir caja", exact: true }),

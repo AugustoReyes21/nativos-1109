@@ -1,5 +1,16 @@
 # Auditoría técnica — Nativos1109
 
+## Caja y preparación FEL — 2026-10-07
+
+- **HIGH / P1:** cajero podía cerrar sin autorización administrativa. Nuevo permiso backend y guarda SQL; solicitud congela operaciones monetarias y requiere aprobación MFA, UUID de generación y contado inalterado. Pruebas de autorización/concurrencia/solicitud obsoleta pasan.
+- **HIGH / P1:** pago mixto no existía; sumarlo como efectivo total falsearía arqueo. Partes generadas y constraints SQL, neto calculado en servidor y regreso de cambio solo al efectivo, cubiertos por API y DB.
+- **HIGH / pendiente:** no hay certificador ni configuración fiscal proporcionados. FEL no implementado ni habilitado; barrera explícita antes del cobro si se solicita factura. No se sustituye DTE por comprobante. Ver CASHIER_FEL.md.
+- **MEDIUM / P2:** faltaban envío explícito, historial independiente y reimpresión auditada. Implementados con RBAC/idempotencia; no equivale a verificación de impresora física.
+- **MEDIUM / P3:** la primera consulta de reportes tenía límites horarios incorrectos por sobrecarga PostgreSQL de `date AT TIME ZONE`. Corregida con cast explícito timestamp y pruebas en ambos límites de medianoche de Guatemala.
+- **MEDIUM / pendiente:** ingresos/gastos/mermas constituyen saldo parcial, no utilidad contable/fiscal. Faltan costos, impuestos, reversos y revisión contable; UI lo declara.
+
+Resultados por bloque y límites en TESTING.md. Revisión independiente de Claude pendiente; staging gratuito sigue sin condiciones de producción.
+
 ## Exclusión operativa solicitada por el propietario — 2026-10-07
 
 **HIGH / P1:** el estado global no impedía que dos meseros seleccionaran una mesa antes de existir una orden. Añadida reserva temporal PostgreSQL (007), lock exclusivo por mesa compartido por adquisición y creación de órdenes, comprobación de propietario/sesión, vencimiento y generación para renovaciones/liberaciones. Pruebas reales de carrera y doble sesión demuestran un único ganador sin crear órdenes vacías. La UI también bloquea la mesa, pero no es la barrera de seguridad. Revisión de Claude solicitada, aún pendiente; publicación en Render no realizada en este bloque.

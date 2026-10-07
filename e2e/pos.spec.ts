@@ -17,8 +17,13 @@ async function login(page: Page, email: string) {
 }
 test("administrator → waiter → live kitchen → cashier with reconnect and responsive layout", async ({
   browser,
-  page,
+  page: adminPage,
 }, info) => {
+  let page = adminPage;
+  const staffContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:3000",
+    viewport: info.project.use.viewport,
+  });
   const tag = info.project.name + "-" + randomUUID().slice(0, 6);
   if (!new URL(connectionString).pathname.endsWith("_test"))
     throw new Error("Dedicated test DB required");
@@ -89,16 +94,14 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     await expect(
       cook.getByRole("heading", { name: "Cocina", exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Salir", exact: true }).click();
-    await expect(page.getByLabel("Correo", { exact: true })).toBeVisible();
+    // Keep the administrator's authenticated MFA session available for approval.
+    page = await staffContext.newPage();
     await login(page, emails.MESERO!);
     await expect(
       page.getByRole("heading", { name: "El salón, a tu ritmo." }),
     ).toBeVisible();
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page
-      .getByRole("button", { name: /Nivel 2 Segundo nivel$/ })
-      .click();
+    await page.getByRole("button", { name: /Nivel 2 Segundo nivel$/ }).click();
     const visualTable = page.getByRole("button", {
       name: new RegExp(`Disponible Mesa-${tag}`),
     });
@@ -189,6 +192,10 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     });
     await waiterTicket.getByRole("button", { name: "Entregar" }).click();
     await expect(waiterTicket).toContainText("ENTREGADO");
+    await waiterTicket
+      .getByRole("button", { name: "Enviar a caja", exact: true })
+      .click();
+    await expect(waiterTicket).toContainText("Enviada a caja");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -202,12 +209,15 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     await expect(page.getByLabel("Correo", { exact: true })).toBeVisible();
     await login(page, emails.CAJERO!);
     await page.getByRole("button", { name: "Caja", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Apertura y cierre", exact: true })
+      .click();
     await page.getByLabel("Fondo inicial (Q)").fill("100");
     await page.getByRole("button", { name: "Abrir caja", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Caja abierta" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Órdenes", exact: true }).click();
+    await page.getByRole("button", { name: /^Cobrar cuentas/ }).click();
     const cashierTicket = page
       .locator("article")
       .filter({ hasText: "Almuerzo-" + tag });
@@ -221,11 +231,29 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       `Mesa-${tag} · Nivel 2`,
     );
     await page.getByRole("button", { name: "Cerrar", exact: true }).click();
-    await expect(cashierTicket).toContainText("Pagada");
-    await page.getByRole("button", { name: "Caja", exact: true }).click();
+    await expect(cashierTicket).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Apertura y cierre", exact: true })
+      .click();
     await page.getByLabel("Efectivo contado (Q)").fill("145");
     await page
-      .getByRole("button", { name: "Cerrar caja", exact: true })
+      .getByRole("button", {
+        name: "Solicitar autorización de cierre",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByText(/Cierre pendiente de autorización administrativa/),
+    ).toBeVisible();
+    await adminPage.getByRole("button", { name: "Caja", exact: true }).click();
+    await adminPage
+      .getByRole("button", { name: "Apertura y cierre", exact: true })
+      .click();
+    await expect(adminPage.getByLabel("Efectivo contado (Q)")).toHaveValue(
+      "145.00",
+    );
+    await adminPage
+      .getByRole("button", { name: "Autorizar y cerrar caja", exact: true })
       .click();
     await expect(
       page.getByRole("heading", { name: "Abrir caja" }),
@@ -244,6 +272,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
     expect(await page.evaluate(() => localStorage.length)).toBe(0);
     await cookContext.close();
   } finally {
+    await staffContext.close();
     await db.end();
   }
 });

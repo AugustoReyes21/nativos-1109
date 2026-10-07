@@ -324,6 +324,13 @@ describe("PDF menu, privileged owner and courtesy ledger", () => {
         })
       ).status,
     ).toBe(400);
+    expect(
+      (
+        await post(waiter, `/api/orders/${o.id}/send-to-cash`, {
+          version: current.version,
+        })
+      ).status,
+    ).toBe(200);
     const payment = await post(cashier, "/api/payments", {
       orderId: o.id,
       method: "EFECTIVO",
@@ -403,6 +410,13 @@ describe("PDF menu, privileged owner and courtesy ledger", () => {
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
     const next = await order(1);
+    const submitted = await post(
+      waiter,
+      `/api/orders/${next.id}/send-to-cash`,
+      { version: next.version },
+    );
+    expect(submitted.status).toBe(200);
+    next.version = submitted.body.version as number;
     const raced = await Promise.all([
       post(owner, "/api/courtesies", gift(next)),
       post(cashier, "/api/payments", {

@@ -110,7 +110,7 @@ it("a movement waiting on a concurrent cash close cannot enter the closed regist
   const db = context.db;
   const u = (
     await db.query(
-      "INSERT INTO users(name,email,password_hash,role) VALUES ('Fixture','fixture@example.test','unused','CAJERO') RETURNING id",
+      "INSERT INTO users(name,email,password_hash,role) VALUES ('Fixture','fixture@example.test','unused','ADMINISTRADOR') RETURNING id",
     )
   ).rows[0] as { id: string };
   const s = (
@@ -132,8 +132,8 @@ it("a movement waiting on a concurrent cash close cannot enter the closed regist
     );
     const rejected = expect(move).rejects.toMatchObject({ code: "23514" });
     await closing.query(
-      "UPDATE cash_shifts SET closed_at=now(),counted_cents=0,expected_cents=0,difference_cents=0 WHERE id=$1",
-      [s.id],
+      "UPDATE cash_shifts SET closed_at=now(),counted_cents=0,expected_cents=0,difference_cents=0,closure_approved_by=$2 WHERE id=$1",
+      [s.id, u.id],
     );
     await closing.query("COMMIT");
     await rejected;

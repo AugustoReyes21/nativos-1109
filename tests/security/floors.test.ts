@@ -80,7 +80,7 @@ describe('table status (server-side, every role)', () => {
   });
 
   it('follows the full service cycle: service → ready → payment → available', async () => {
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
     expect((await post(agents.cashier!, '/api/cash/open', { openingCents: 0 })).status).toBe(201);
     const id = (await post(agents.waiterA!, '/api/orders', { tableId: downstairs, items: [{ productId: soda, quantity: 1 }] })).body.id as string;
     expect((await statusOf('waiterB', downstairs)).state).toBe('service');
@@ -88,6 +88,7 @@ describe('table status (server-side, every role)', () => {
     expect((await statusOf('waiterB', downstairs)).state).toBe('ready');
     await advance(id, 'waiterA', 'ENTREGADO');
     expect((await statusOf('waiterB', downstairs)).state).toBe('payment');
+    expect((await post(agents.waiterA!, `/api/orders/${id}/send-to-cash`, { version: 4 })).status).toBe(200);
     expect((await post(agents.cashier!, '/api/payments', { orderId: id, method: 'TARJETA', tenderedCents: 1500 })).status).toBe(201);
     expect((await statusOf('waiterB', downstairs)).state).toBe('available');
   });

@@ -20,6 +20,7 @@ beforeAll(async () => {
   const target = new URL(url); target.pathname = `/${dbName}`;
   db = new pg.Pool({ connectionString: target.toString(), max: 6 });
   await migrate(db);
+  await db.query("INSERT INTO users(email,name,password_hash,role) VALUES('approval@example.test','Approver','unused','ADMINISTRADOR')");
 });
 afterAll(async () => {
   await db?.end();
@@ -36,7 +37,7 @@ const one = async <T extends pg.QueryResultRow>(sql: string, params: unknown[] =
 let seq = 0;
 beforeEach(async () => {
   const n = ++seq;
-  await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
+  await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
   const user = await one<{ id: string }>(`INSERT INTO users(email,name,password_hash,role) VALUES ($1,'M','x','MESERO') RETURNING id`, [`m${n}@x.test`]);
   const cat = await one<{ id: string }>('INSERT INTO categories(name) VALUES ($1) RETURNING id', [`Platos ${n}`]);
   const product = await one<{ id: string }>('INSERT INTO products(category_id,name,price_cents,stock) VALUES ($1,$2,5000,1) RETURNING id', [cat.id, 'Hamburguesa']);
@@ -48,7 +49,7 @@ async function order(quantity = 1, price = 5000) {
   const c = await db.connect();
   try {
     await c.query('BEGIN');
-    const o = (await c.query<{ id: string }>('INSERT INTO orders(table_id,user_id,total_cents) VALUES ($1,$2,$3) RETURNING id', [f.table, f.user, quantity * price])).rows[0]!;
+    const o = (await c.query<{ id: string }>('INSERT INTO orders(table_id,user_id,total_cents,sent_to_cash_at,sent_to_cash_by) VALUES ($1,$2,$3,now(),$2) RETURNING id', [f.table, f.user, quantity * price])).rows[0]!;
     await c.query('INSERT INTO order_items(order_id,product_id,name,quantity,price_cents) VALUES ($1,$2,$3,$4,$5)', [o.id, f.product, 'Hamburguesa', quantity, price]);
     await c.query('COMMIT');
     return o.id;
@@ -115,7 +116,7 @@ describe('payments', () => {
 
   it('rejects a payment into a closed cash shift', async () => {
     const id = await order(); const s = await shift();
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE id=$1', [s]);
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE id=$1', [s]);
     await expect(pay(id, s)).rejects.toMatchObject({ code: '23514' });
   });
 
@@ -178,14 +179,14 @@ describe('cash register', () => {
 
   it('a closed shift cannot be closed again or reopened', async () => {
     const s = await shift();
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=100 WHERE id=$1', [s]);
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=100 WHERE id=$1', [s]);
     await expect(db.query('UPDATE cash_shifts SET counted_cents=999999 WHERE id=$1', [s])).rejects.toMatchObject({ code: '23514' });
     await expect(db.query('UPDATE cash_shifts SET closed_at=NULL, counted_cents=NULL WHERE id=$1', [s])).rejects.toMatchObject({ code: '23514' });
   });
 
   it('rejects cash movements into a closed shift', async () => {
     const s = await shift();
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE id=$1', [s]);
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE id=$1', [s]);
     await expect(db.query(`INSERT INTO cash_movements(shift_id,user_id,amount_cents,reason) VALUES ($1,$2,-500,'retiro')`, [s, f.user])).rejects.toMatchObject({ code: '23514' });
   });
 });

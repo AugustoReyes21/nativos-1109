@@ -101,6 +101,13 @@ describe("table metadata and historical snapshots", () => {
     });
     expect(order.status).toBe(201);
     orderId = order.body.id as string;
+    expect(
+      (
+        await post(waiter, `/api/orders/${orderId}/send-to-cash`, {
+          version: order.body.version,
+        })
+      ).status,
+    ).toBe(200);
     expect(order.body).toMatchObject({
       table_name: "Terraza 12",
       table_floor: 2,
@@ -154,7 +161,7 @@ describe("table metadata and historical snapshots", () => {
       (
         await patch(kitchen, `/api/orders/${orderId}/status`, {
           status: "EN_PREPARACION",
-          version: 1,
+          version: 2,
         })
       ).status,
     ).toBe(200);
@@ -162,7 +169,7 @@ describe("table metadata and historical snapshots", () => {
       (
         await patch(kitchen, `/api/orders/${orderId}/status`, {
           status: "LISTO",
-          version: 2,
+          version: 3,
         })
       ).status,
     ).toBe(200);
@@ -171,7 +178,7 @@ describe("table metadata and historical snapshots", () => {
       (
         await patch(waiter, `/api/orders/${orderId}/status`, {
           status: "ENTREGADO",
-          version: 3,
+          version: 4,
         })
       ).status,
     ).toBe(200);

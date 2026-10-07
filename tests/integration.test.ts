@@ -260,6 +260,13 @@ describe("PostgreSQL-backed API", () => {
     });
     expect(opened.status).toBe(201);
     shiftId = opened.body.id as string;
+    expect(
+      (
+        await post(waiter, `/api/orders/${orderId}/send-to-cash`, {
+          version: 4,
+        })
+      ).status,
+    ).toBe(200);
     const input = { orderId, method: "EFECTIVO", tenderedCents: 5000 };
     const keys = [randomUUID(), randomUUID()];
     const results = await Promise.all(
@@ -293,8 +300,14 @@ describe("PostgreSQL-backed API", () => {
         })
       ).status,
     ).toBe(201);
-    const closed = await post(cashier, "/api/cash/close", {
+    const requested = await post(cashier, "/api/cash/close-request", {
       shiftId,
+      countedCents: 13900,
+    });
+    expect(requested.status).toBe(201);
+    const closed = await post(admin, "/api/cash/close", {
+      shiftId,
+      requestId: requested.body.closure_request_id,
       countedCents: 13900,
     });
     expect(closed.status).toBe(200);

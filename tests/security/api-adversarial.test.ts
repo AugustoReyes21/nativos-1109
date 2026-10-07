@@ -296,24 +296,27 @@ describe('business logic attacks', () => {
   });
 
   it('cannot cancel after charging, cannot charge after cancelling, cannot underpay', async () => {
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
     expect((await post(agents.cashier!, '/api/cash/open', { openingCents: 0 })).status).toBe(201);
     const paid = await order(agents.waiterA!, ids.burger);
+    expect((await post(agents.waiterA!, `/api/orders/${paid.id}/send-to-cash`, { version: 1 })).status).toBe(200);
     expect((await post(agents.cashier!, '/api/payments', { orderId: paid.id, method: 'EFECTIVO', tenderedCents: 4999 })).status).toBe(400);
     expect((await post(agents.cashier!, '/api/payments', { orderId: paid.id, method: 'TARJETA', tenderedCents: 6000 })).status).toBe(400);
     expect((await post(agents.cashier!, '/api/payments', { orderId: paid.id, method: 'EFECTIVO', tenderedCents: 5000 })).status).toBe(201);
-    expect((await patch(agents.cashier!, `/api/orders/${paid.id}/status`, { status: 'CANCELADO', version: 1 })).status).toBe(409);
+    const paidCancellation = await patch(agents.cashier!, `/api/orders/${paid.id}/status`, { status: 'CANCELADO', version: 2 });
+    expect(paidCancellation.status).toBe(409);
+    expect(paidCancellation.body.error.code).toBe('INVALID_ORDER_STATE');
     const cancelled = await order(agents.waiterA!, ids.burger);
     expect((await patch(agents.cashier!, `/api/orders/${cancelled.id}/status`, { status: 'CANCELADO', version: 1 })).status).toBe(200);
     expect((await post(agents.cashier!, '/api/payments', { orderId: cancelled.id, method: 'EFECTIVO', tenderedCents: 5000 })).status).toBe(409);
   });
 
   it('closing the register twice with different attempts: second is rejected and totals do not change', async () => {
-    await db.query('UPDATE cash_shifts SET closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
+    await db.query('UPDATE cash_shifts SET closure_approved_by=(SELECT id FROM users WHERE role=\'ADMINISTRADOR\' LIMIT 1), closed_at=now(), counted_cents=0 WHERE closed_at IS NULL');
     const shift = (await post(agents.cashier!, '/api/cash/open', { openingCents: 10000 })).body as { id: string };
-    const first = await post(agents.cashier!, '/api/cash/close', { shiftId: shift.id, countedCents: 10000 });
+    const first = await post(agents.admin!, '/api/cash/close', { shiftId: shift.id, countedCents: 10000 });
     expect(first.status).toBe(200);
-    expect((await post(agents.cashier!, '/api/cash/close', { shiftId: shift.id, countedCents: 1 })).status).toBe(409);
+    expect((await post(agents.admin!, '/api/cash/close', { shiftId: shift.id, countedCents: 1 })).status).toBe(409);
     expect((await one<{ counted_cents: number }>('SELECT counted_cents FROM cash_shifts WHERE id=$1', [shift.id])).counted_cents).toBe(10000);
   });
 });
