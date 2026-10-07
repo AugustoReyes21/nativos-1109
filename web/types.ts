@@ -1,10 +1,57 @@
-export type User = { id: string; name: string; email: string; role: string; permissions: string[]; mfa_enabled: boolean; active?: boolean };
-export type Product = { id: string; name: string; category_id: string; price_cents: number; stock: number; version: number; active: boolean };
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  mfa_enabled: boolean;
+  active?: boolean;
+};
+export type Product = {
+  id: string;
+  name: string;
+  category_id: string;
+  price_cents: number;
+  stock: number;
+  version: number;
+  active: boolean;
+};
 export type Named = { id: string; name: string };
-export type Catalog = { products: Product[]; categories: Named[]; tables: Named[] };
-export type Item = { product_id: string; name: string; quantity: number; price_cents: number; notes: string };
-export type Order = { id: string; number: string; table_name: string; status: string; total_cents: number; version: number; notes: string; items: Item[]; paid: boolean; created_at: string; waiter: string };
-export type Shift = { id: string; closed_at: string | null; current_expected_cents: string; difference_cents: string | null };
+export type Catalog = {
+  products: Product[];
+  categories: Named[];
+  tables: Named[];
+};
+export type Item = {
+  product_id: string;
+  name: string;
+  quantity: number;
+  price_cents: number;
+  notes: string;
+};
+export type Order = {
+  id: string;
+  number: string;
+  table_name: string;
+  status: string;
+  total_cents: number;
+  version: number;
+  notes: string;
+  items: Item[];
+  paid: boolean;
+  created_at: string;
+  waiter: string;
+};
+export type Shift = {
+  id: string;
+  closed_at: string | null;
+  current_expected_cents: string;
+  difference_cents: string | null;
+};
 export type Action = (operation: () => Promise<void>) => Promise<void>;
-export type Mutate = <T>(path: string, data: unknown, method?: string) => Promise<T>;
-export const human = (v: string) => v.replaceAll('_', ' ');
+export type Mutate = <T>(
+  path: string,
+  data: unknown,
+  method?: string,
+) => Promise<T>;
+export const human = (v: string) => v.replaceAll("_", " ");
