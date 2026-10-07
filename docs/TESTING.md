@@ -10,6 +10,8 @@ Primera ejecución detectó que `inert` por sí solo no impedía a la automatiza
 
 Continúa el aviso conocido de listeners en el fixture concurrente de Supertest, no suprimido. No prueba Safari/iOS real, impresión física ni rendimiento de GPU en hardware del restaurante. CI remoto, despliegue y revisión de Claude se registran separadamente después de verificarse.
 
+Resultado remoto final `7537857`: CI 37669645780/37669652240 y ZAP 37669652138 aprobados. Despliegue `dep-db39aqt9fdbs73ad9pu0` live; tres health checks 200 con HSTS, JS/CSS idénticos por SHA256 a los probados. Smoke público remoto escritorio/móvil sin errores ni overflow. Revisión independiente sigue pendiente; no se ejecutaron ventas sintéticas en Render.
+
 ## Selección exclusiva antes de crear órdenes — 2026-10-07
 
 `tests/table-claims.test.ts` añade nueve casos con PostgreSQL real: clics simultáneos, bloqueo sin orden, API directa, RBAC/CSRF, UUID/replay, expiración, renovación/liberación atrasadas, cambio atómico, logout, orden activa y conservación del intento idempotente entre generaciones. Suite completa: **103/103** pasan.

@@ -4,10 +4,11 @@
 
 Publicado el 2026-10-07 mediante CLI oficial autorizado por el propietario: **https://nativos1109.onrender.com**. Entorno gratuito de ensayo, **no producción comercial**. No se modificaron otros servicios de la cuenta.
 
-- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama actual `codex/feature/menu-superadmin-courtesies`.
+- Web `srv-db3740ss728c73biip9g`, Oregon/free, rama actual `codex/feature/immersive-floor-motion`.
 - PostgreSQL 17 `dpg-db36u0rncjis73elmaq0-a`, Oregon/free; **vence el 2026-11-06**. No guardar ventas reales aquí. Cambiar a infraestructura persistente con backups antes de operación comercial.
 - Primer deploy `dep-db3741cs728c73biiqg0`, commit `169d9d3`, después de verify/sast/baseline exitosos. CI: runs 37651290538 y 37651290459.
-- Actualización publicada: `dep-db38sm4s728c73bnk5lg`, commit `b43bf89b8361d78dcdaf81047ed4f104c66259f0`, estado Render `live`. CI previo aprobado: Quality/security 37666025025 y 37666034735; ZAP 37666034730. Incluye interfaz de dos niveles, reservas exclusivas, menú y cortesías.
+- Actualización anterior (menú/cortesías): `dep-db38sm4s728c73bnk5lg`, commit `b43bf89b8361d78dcdaf81047ed4f104c66259f0`. CI aprobado: Quality/security 37666025025 y 37666034735; ZAP 37666034730. Incluye interfaz de dos niveles, reservas exclusivas, menú y cortesías.
+- Actualización visual publicada: `dep-db39aqt9fdbs73ad9pu0`, commit `75378577609ff3b4ded9ffce184c281db832ad5a`, estado Render `live`. Quality/security 37669645780 y 37669652240, ZAP 37669652138 aprobados antes del despliegue. PR #10 pendiente de revisión independiente, sin merge a main.
 - Verificados remotamente `/`, `/health/live`, `/health/ready`: 200; HTTPS/HSTS presentes. Migraciones se ejecutaron al arrancar. No se modificó el esquema manualmente.
 - SMTP Brevo con STARTTLS obligatorio en 2525, autenticación comprobada. MAIL_FROM/SMTP_USER/SMTP_PASSWORD están en variables Render, no en Git. La clave compartida en chat debe rotarse desde Brevo y actualizarse directamente en Render.
 - Administrador inicial creado con `server/bootstrap.ts` compilado y contraseña aleatoria solo en memoria; no existe contraseña predeterminada publicada. Se solicitó el correo para elegir contraseña y se comprobó ausencia de RESET_DELIVERY_FAILURE. Aceptación SMTP no prueba entrega en inbox. La persona completa MFA; login previo a enrollment no emitió sesión POS.
@@ -66,4 +67,10 @@ Cuenta `reyessamayoa8@gmail.com` promovida con `promoteOwner`, después de confi
 
 Datos antes/después: una cuenta conservada; cero órdenes y pagos; catálogo pasa de 0 a 20 productos, todos con stock 0. Hay **cero mesas configuradas**: el propietario debe crear las reales para los niveles 1/2 en Productos y mesas y establecer las cantidades de jornada. No se inventaron mesas, existencias ni ventas.
 
-La publicación solicitada no equivale a cierre de la revisión independiente financiera ni a producción comercial. UI-03/04/05 y CL-02/03 siguen pendientes en el dictamen de Claude. No volver al auth antiguo después de promover SUPERADMIN. Contrato/operación en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md).
+La publicación solicitada no equivale a cierre de la revisión independiente financiera ni a producción comercial. UI-03/04/05 y CL-02/03 seguían pendientes al publicar #9; el bloque visual siguiente atiende implementación de UI-03/04 sin dar por cerrado el dictamen de Claude. No volver al auth antiguo después de promover SUPERADMIN. Contrato/operación en [MENU_AND_COURTESIES.md](MENU_AND_COURTESIES.md).
+
+## Mesas isométricas y transición N publicadas — 2026-10-07
+
+PR #10, commit/despliegue actual arriba. Render confirmó `live`; `/health`, `/health/live`, `/health/ready` responden 200 y HSTS. El HTML remoto referencia `index-CREcfA-d.js` y `index-XQJuKWYA.css`, ambos con SHA256 idéntico a la compilación validada localmente. Navegador remoto escritorio/móvil: login visible, 0 errores JavaScript/recursos y sin overflow. Los módulos autenticados fueron probados mediante 12 E2E en DB aislada, no mediante suplantación del propietario.
+
+No se modificaron cuentas, stock, ventas, variables secretas, esquema ni acceso externo de DB. Se conservó el plan free y checksPass; sin costos nuevos. Las mesas de ambos niveles deben configurarse con sus datos reales en Productos y mesas, no se sembraron fixtures en el servicio. Review UX/accesibilidad de Claude solicitada en issue #5 y PR #10, todavía pendiente. Es staging, no certificación de producción ni impresión física.

@@ -8,6 +8,8 @@ Decisiones: geometría SVG con volumen/sombra, no motor WebGL; cortina N de 900 
 
 Claude: revisión UX/accesibilidad y de este diff solicitada; no se presume aceptación. UI-05, CL-02/03 y revisión financiera de #9 siguen pendientes. Codex conserva estos componentes hasta terminar la publicación autorizada de staging con CI verde; no fusionar main ni contratar planes de pago. Configurar mesas reales sigue pendiente del propietario. Evidencia de despliegue se registra en DEPLOYMENT.md cuando Render confirme `live`.
 
+Publicación final: [PR #10](https://github.com/AugustoReyes21/nativos-1109/pull/10), `7537857`, Render `dep-db39aqt9fdbs73ad9pu0` live. CI 37669645780/37669652240/37669652138 aprobado, bundles remotos verificados por SHA256 y login desktop/mobile sin errores. Codex libera los componentes para revisión coordinada; no se supone aprobación de Claude ni se cierra #5. Siguiente prioridad: revisión independiente UX y configuración de mesas reales; pendientes financieros/CL-02/03 conservan su prioridad técnica.
+
 ## 2026-10-07 — Inicio
 
 GitHub estaba vacío: sin ramas, commits, PR o issues. Codex ocupa el bloque inicial `codex/feature/secure-pos-foundation`: API, esquema, UI, tests y CI. Claude: revisión de arquitectura, seguridad y QA solicitada al presentar el PR; no se presume que haya revisado todavía.
