@@ -1,5 +1,16 @@
 # Sala Nativos — diseño operativo y coordinación
 
+## Actualización visual — 2026-10-07
+
+Pedido explícito del propietario: mesas con apariencia 3D y transición elegante con la N de aproximadamente un segundo. Implementación en `codex/feature/immersive-floor-motion`, apilada sobre PR #9; avisada a Claude en issue #5 antes de editar.
+
+- `TableScene.tsx` y `table-geometry.ts`: muebles isométricos SVG con superficies, espesor, patas, sillas, veta y sombras. Tres formas y número real de asientos (1–12). No es WebGL ni un plano arquitectónico a escala. Sin nuevas dependencias, descargas de modelos ni bucle continuo de renderizado; adecuado para tablets.
+- `ModuleStage.tsx`: firma N dorada/verde bosque, trazos y revelado durante 900 ms al cambiar módulo. No representa una petición de red ni bloquea la navegación. Cambiar de destino cancela el temporizador anterior; refrescar datos o pulsar el módulo actual no repite la transición. `fieldset disabled`, `inert` y `aria-hidden` protegen el contenido hasta finalizar; el foco se entrega al módulo, no a un botón financiero. La preferencia de movimiento reducido omite esta espera y coreografía.
+- Cambio de nivel con desplazamiento breve, entrada escalonada de mesas y elevación al hover/foco. Sin pulsos infinitos; los estados conservan texto, color y reglas de bloqueo existentes. El nivel, borrador y reservas siguen en el estado de aplicación y servidor, no en la animación.
+- Fondo lateral continuo en escritorio, adaptado a los anchos reales de navegación; la impresión excluye encabezados/lista de órdenes a pesar del nuevo contenedor. Sin cambios en permisos, stock, caja, órdenes, API o esquema.
+
+Límites: no se inventan mesas en Render. El administrador debe configurar las mesas reales de ambos niveles para verlas representadas. No incluye giro libre, arrastre, plano a escala, modo oscuro ni texturas externas. Revisión independiente de Claude solicitada; no se presume aprobación.
+
 Solicitud del propietario: interfaz contemporánea y profesional, transiciones personalizadas, mesas visuales y restaurante de dos niveles.
 
 ## Reparto propuesto a Claude
