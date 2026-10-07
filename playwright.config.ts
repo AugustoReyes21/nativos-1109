@@ -4,6 +4,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // A forgotten test.only must fail CI instead of silently skipping the rest.
+  forbidOnly: !!process.env.CI,
   timeout: 90000,
   expect: { timeout: 12000 },
   reporter: [["list"], ["html", { open: "never" }]],
