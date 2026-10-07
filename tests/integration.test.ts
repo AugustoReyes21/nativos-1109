@@ -46,9 +46,6 @@ describe("PostgreSQL-backed API", () => {
       .send(data);
   beforeAll(async () => {
     context = await testDatabase();
-    await context.db.query(
-      "TRUNCATE users,rate_limits,categories,restaurant_tables,events RESTART IDENTITY CASCADE",
-    );
     await seedUsers(context.db);
     server = createApp(context.db, context.c, async (_email, token) => {
       resetToken = token;

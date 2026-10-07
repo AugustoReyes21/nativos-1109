@@ -41,9 +41,10 @@ export async function audit(
   id?: string,
   result = "SUCCESS",
   userId?: string,
+  details: Record<string, string | number | boolean | null> = {},
 ) {
   await db.query(
-    "INSERT INTO audit_log(user_id,action,resource,resource_id,result,request_id,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+    "INSERT INTO audit_log(user_id,action,resource,resource_id,result,request_id,ip,user_agent,details) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     [
       userId ?? req.identity?.id ?? null,
       action,
@@ -53,6 +54,7 @@ export async function audit(
       req.requestId,
       req.ip,
       req.get("user-agent")?.slice(0, 256),
+      JSON.stringify(details),
     ],
   );
 }

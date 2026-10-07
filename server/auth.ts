@@ -186,12 +186,19 @@ export function auth(db: DB, c: Config, mail: Mailer) {
   }
   function routes(app: Express) {
     app.post("/api/auth/login", async (req, res) => {
-      await limit(req, "login-ip", 20, 900);
+      // Burst cap protects Argon2 without locking a whole NAT for a shift.
+      await limit(req, "login-burst", 120, 60);
       const input = z
         .object({ email, password: z.string().min(1).max(128) })
         .strict()
         .parse(req.body);
-      await limit(req, "login-account", 10, 900, input.email);
+      const failureKey = "login-failure:" + digest(input.email + ":" + req.ip);
+      const failures = await db.query<{ hits: number }>(
+        "SELECT hits FROM rate_limits WHERE key=$1 AND expires_at>now()",
+        [failureKey],
+      );
+      if ((failures.rows[0]?.hits ?? 0) >= 10)
+        fail(429, "RATE_LIMITED", "Demasiados intentos. Intenta más tarde");
       const { rows } = await db.query<User>(
         "SELECT * FROM users WHERE email=$1",
         [input.email],
@@ -203,9 +210,12 @@ export function auth(db: DB, c: Config, mail: Mailer) {
         input.password,
       );
       if (!valid || !u?.active) {
+        await limit(req, "login-failure", 10, 900, input.email + ":" + req.ip);
+        await limit(req, "login-failed-ip", 100, 900);
         await audit(db, req, "LOGIN_FAILURE", "auth", undefined, "FAILURE");
         return fail(401, "INVALID_CREDENTIALS", "Credenciales inválidas");
       }
+      await db.query("DELETE FROM rate_limits WHERE key=$1", [failureKey]);
       if (u.mfa_enabled || u.role === "ADMINISTRADOR") {
         const token = randomToken();
         await db.query(
@@ -341,6 +351,11 @@ export function auth(db: DB, c: Config, mail: Mailer) {
     app.post("/api/auth/refresh", async (req, res) => {
       await limit(req, "refresh", 60, 300);
       const hash = digest(readCookie(req, names.refresh));
+      const retryKey = req.get("Idempotency-Key");
+      const retryHash =
+        retryKey && z.uuid().safeParse(retryKey).success
+          ? digest(retryKey)
+          : null;
       const result = await transaction(db, async (tx) => {
         const token = (
           await tx.query<{ session_id: string }>(
@@ -361,12 +376,35 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           )
         ).rows[0]!;
         const t = (
-          await tx.query<{ used_at: Date | null }>(
-            "SELECT used_at FROM refresh_tokens WHERE hash=$1",
+          await tx.query<{
+            used_at: Date | null;
+            retry_key_hash: string | null;
+            replacement_encrypted: string | null;
+            retry_valid: boolean;
+          }>(
+            "SELECT *,used_at>now()-interval '30 seconds' AS retry_valid FROM refresh_tokens WHERE hash=$1",
             [hash],
           )
         ).rows[0]!;
         if (t.used_at) {
+          if (
+            !s.revoked_at &&
+            s.valid &&
+            retryHash &&
+            retryHash === t.retry_key_hash &&
+            t.retry_valid &&
+            t.replacement_encrypted
+          ) {
+            const refresh = decrypt(t.replacement_encrypted, c.MFA_KEY);
+            const successor = (
+              await tx.query<{ used_at: Date | null }>(
+                "SELECT used_at FROM refresh_tokens WHERE hash=$1",
+                [digest(refresh)],
+              )
+            ).rows[0];
+            if (successor && !successor.used_at)
+              return { refresh, access: await accessToken(s.user_id, s.id) };
+          }
           await tx.query("UPDATE sessions SET revoked_at=now() WHERE id=$1", [
             s.id,
           ]);
@@ -393,8 +431,8 @@ export function auth(db: DB, c: Config, mail: Mailer) {
           return null;
         const refresh = randomToken();
         await tx.query(
-          "UPDATE refresh_tokens SET used_at=now() WHERE hash=$1",
-          [hash],
+          "UPDATE refresh_tokens SET used_at=now(),retry_key_hash=$2,replacement_encrypted=$3 WHERE hash=$1",
+          [hash, retryHash, retryHash ? encrypt(refresh, c.MFA_KEY) : null],
         );
         await tx.query(
           "INSERT INTO refresh_tokens(hash,session_id) VALUES ($1,$2)",

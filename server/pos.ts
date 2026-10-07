@@ -220,6 +220,14 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             : "PRODUCT_PRICE_CHANGED",
           "products",
           id,
+          "SUCCESS",
+          undefined,
+          {
+            previousPriceCents: old.price_cents,
+            priceCents: input.priceCents,
+            previousStock: old.stock,
+            stock: input.stock,
+          },
         );
         await changed(tx);
         return r;
@@ -237,8 +245,13 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
       (SELECT json_agg(i ORDER BY i.name) FROM order_items i WHERE i.order_id=o.id) AS items,
       EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id) AS paid
       FROM orders o JOIN restaurant_tables t ON t.id=o.table_id JOIN users u ON u.id=o.user_id
-      WHERE ($1::uuid IS NULL OR o.user_id=$1) AND (o.created_at>now()-interval '24 hours' OR o.status IN ('PENDIENTE','EN_PREPARACION','LISTO'))
-      ORDER BY o.created_at LIMIT 200`,
+      WHERE ($1::uuid IS NULL OR o.user_id=$1) AND (
+        o.status IN ('PENDIENTE','EN_PREPARACION','LISTO')
+        OR (o.status<>'CANCELADO' AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.order_id=o.id))
+        OR o.id IN (SELECT h.id FROM orders h WHERE ($1::uuid IS NULL OR h.user_id=$1)
+          AND h.status IN ('ENTREGADO','CANCELADO') AND h.created_at>now()-interval '24 hours'
+          ORDER BY h.created_at DESC LIMIT 200))
+      ORDER BY o.created_at`,
       [ownOnly ? me.id : null],
     );
     res.json(result.rows);
@@ -377,6 +390,9 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             : "ORDER_STATUS_CHANGED",
           "orders",
           id,
+          "SUCCESS",
+          undefined,
+          { from: o.status, to: input.status, totalCents: o.total_cents },
         );
         await changed(tx);
         return updated;
@@ -401,7 +417,16 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             [identity(req).id, input.openingCents],
           )
         ).rows[0]!;
-        await audit(tx, req, "CASH_REGISTER_OPENED", "cash", s.id);
+        await audit(
+          tx,
+          req,
+          "CASH_REGISTER_OPENED",
+          "cash",
+          s.id,
+          "SUCCESS",
+          undefined,
+          { openingCents: input.openingCents },
+        );
         await changed(tx);
         return s;
       }),
@@ -466,7 +491,20 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             [input.countedCents, expected, input.countedCents - expected, s.id],
           )
         ).rows[0];
-        await audit(tx, req, "CASH_REGISTER_CLOSED", "cash", s.id);
+        await audit(
+          tx,
+          req,
+          "CASH_REGISTER_CLOSED",
+          "cash",
+          s.id,
+          "SUCCESS",
+          undefined,
+          {
+            expectedCents: expected,
+            countedCents: input.countedCents,
+            differenceCents: input.countedCents - expected,
+          },
+        );
         await changed(tx);
         return r;
       }),
@@ -516,7 +554,22 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
             ],
           )
         ).rows[0]!;
-        await audit(tx, req, "PAYMENT_CREATED", "payments", payment.id);
+        await audit(
+          tx,
+          req,
+          "PAYMENT_CREATED",
+          "payments",
+          payment.id,
+          "SUCCESS",
+          undefined,
+          {
+            orderId: o.id,
+            shiftId: s.id,
+            method: input.method,
+            amountCents: o.total_cents,
+            tenderedCents: input.tenderedCents,
+          },
+        );
         await changed(tx);
         return payment;
       }),
@@ -616,6 +669,30 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         "Otro administrador debe modificar tu acceso",
       );
     const result = await transaction(db, async (tx) => {
+      await tx.query("SELECT pg_advisory_xact_lock(1109003)");
+      const previous = (
+        await tx.query<{ role: string; active: boolean; mfa_enabled: boolean }>(
+          "SELECT role,active,mfa_enabled FROM users WHERE id=$1 FOR UPDATE",
+          [id],
+        )
+      ).rows[0];
+      if (
+        previous?.role === "ADMINISTRADOR" &&
+        previous.active &&
+        previous.mfa_enabled &&
+        (input.role !== "ADMINISTRADOR" || !input.active)
+      ) {
+        const remaining = await tx.query(
+          "SELECT id FROM users WHERE role='ADMINISTRADOR' AND active AND mfa_enabled AND id<>$1 LIMIT 1",
+          [id],
+        );
+        if (!remaining.rowCount)
+          fail(
+            409,
+            "LAST_ADMIN",
+            "Debe permanecer un administrador activo con MFA",
+          );
+      }
       const u = (
         await tx.query(
           "UPDATE users SET role=$1,active=$2 WHERE id=$3 RETURNING id,name,email,role,active",
@@ -630,7 +707,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         "UPDATE auth_challenges SET used_at=now(),pending_secret=NULL WHERE user_id=$1",
         [id],
       );
-      await audit(tx, req, "ROLE_CHANGED", "users", id);
+      await audit(tx, req, "ROLE_CHANGED", "users", id, "SUCCESS", undefined, {
+        previousRole: previous?.role ?? null,
+        role: input.role,
+        active: input.active,
+      });
       return u;
     });
     res.json(result);

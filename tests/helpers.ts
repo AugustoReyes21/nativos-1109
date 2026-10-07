@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import pg from "pg";
 import { config } from "../server/config.js";
 import { database } from "../server/db.js";
 import { migrate } from "../server/migrate.js";
@@ -19,6 +20,25 @@ export async function testDatabase() {
   const c = testConfig();
   if (!new URL(c.DATABASE_URL).pathname.endsWith("_test"))
     throw new Error("Tests require a dedicated *_test database");
+  const target = new URL(c.DATABASE_URL);
+  const name = target.pathname.slice(1);
+  if (
+    !/^nativos_[a-z0-9_]*test$/.test(name) ||
+    !["localhost", "127.0.0.1"].includes(target.hostname)
+  )
+    throw new Error(
+      "Fixture recreation is restricted to named local nativos_*test databases",
+    );
+  target.pathname = "/postgres";
+  const admin = new pg.Client({ connectionString: target.toString() });
+  await admin.connect();
+  try {
+    // Disposable fixture databases only; never bypass append-only production guards.
+    await admin.query("DROP DATABASE IF EXISTS " + pg.escapeIdentifier(name));
+    await admin.query("CREATE DATABASE " + pg.escapeIdentifier(name));
+  } finally {
+    await admin.end();
+  }
   const db = database(c);
   await migrate(db);
   return { db, c };

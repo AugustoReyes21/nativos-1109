@@ -15,15 +15,30 @@ export const passwordSchema = z
 export const randomToken = () => randomBytes(32).toString("base64url");
 export const digest = (v: string) =>
   createHash("sha256").update(v).digest("hex");
+let hashing = 0;
+const waiting: (() => void)[] = [];
+async function boundedHash<T>(operation: () => Promise<T>): Promise<T> {
+  if (hashing >= 2) await new Promise<void>((resolve) => waiting.push(resolve));
+  else hashing++;
+  try {
+    return await operation();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else hashing--;
+  }
+}
 export const passwordHash = (v: string) =>
-  argon2.hash(v, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 1,
-  });
+  boundedHash(() =>
+    argon2.hash(v, {
+      type: argon2.argon2id,
+      memoryCost: 65536,
+      timeCost: 3,
+      parallelism: 1,
+    }),
+  );
 export const passwordVerify = (hash: string, v: string) =>
-  argon2.verify(hash, v);
+  boundedHash(() => argon2.verify(hash, v));
 export function encrypt(secret: string, key: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", Buffer.from(key, "hex"), iv);

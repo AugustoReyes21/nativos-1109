@@ -4,18 +4,23 @@ import helmet from "helmet";
 import { pino } from "pino";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { readdirSync } from "node:fs";
 import { ZodError } from "zod";
 import { auth, type Mailer } from "./auth.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
 import { AppError, fail } from "./common.js";
 import { pos } from "./pos.js";
+import { diagnostic } from "./diagnostics.js";
 
 export const logger = pino({
   level: process.env.NODE_ENV === "test" ? "silent" : "info",
   redact: ["password", "token", "secret", "authorization", "cookie"],
 });
 export function createApp(db: DB, c: Config, mail: Mailer) {
+  const migrations = readdirSync("migrations").filter((name) =>
+    name.endsWith(".sql"),
+  );
   const app = express();
   app.disable("x-powered-by");
   // Render terminates TLS at its proxy; direct deployment must preserve this topology.
@@ -47,6 +52,7 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
           styleSrc: ["'self'"],
           imgSrc: ["'self'", "data:"],
           connectSrc: ["'self'"],
+          fontSrc: ["'self'"],
           objectSrc: ["'none'"],
           baseUri: ["'none'"],
           frameAncestors: ["'none'"],
@@ -59,6 +65,7 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
           ? { maxAge: 31536000, includeSubDomains: true }
           : false,
       referrerPolicy: { policy: "no-referrer" },
+      crossOriginEmbedderPolicy: { policy: "require-corp" },
     }),
   );
   app.use((req, res, next) => {
@@ -100,9 +107,10 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
   app.get(["/health", "/health/ready"], async (_req, res) => {
     try {
       const result = await db.query(
-        "SELECT name FROM schema_migrations WHERE name='001_initial.sql'",
+        "SELECT name FROM schema_migrations WHERE name=ANY($1::text[])",
+        [migrations],
       );
-      if (result.rowCount !== 1)
+      if (result.rowCount !== migrations.length)
         return res.status(503).json({ status: "unavailable" });
       res.json({ status: "ready" });
     } catch {
@@ -115,13 +123,11 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
   const streams = new Set<() => void>();
   app.get("/api/events", security.requireUser, async (req, res) => {
     await security.limit(req, "events", 60, 60);
-    res
-      .status(200)
-      .set({
-        "Content-Type": "text/event-stream",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
+    res.status(200).set({
+      "Content-Type": "text/event-stream",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
     res.flushHeaders();
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -192,10 +198,20 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
         code = "CONFLICT";
         message = "El registro ya existe o la operación ya fue realizada";
       }
-      if (error.code === "23503" || error.code === "23514") {
+      if (error.code === "23503") {
         status = 400;
         code = "INVALID_REFERENCE";
         message = "Los datos no son válidos";
+      }
+      if (error.code === "23514") {
+        status = 409;
+        code = "INVALID_STATE";
+        message = "La operación viola el estado del recurso";
+      }
+      if (["22021", "22P05"].includes(String(error.code))) {
+        status = 400;
+        code = "INVALID_TEXT";
+        message = "El texto contiene caracteres no permitidos";
       }
       if (["40P01", "55P03", "40001", "57014"].includes(String(error.code))) {
         status = 503;
@@ -215,7 +231,10 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
       message = "Solicitud demasiado grande";
     }
     if (status >= 500)
-      logger.error({ requestId: req.requestId, code }, "request_failed");
+      logger.error(
+        { requestId: req.requestId, code, ...diagnostic(error) },
+        "request_failed",
+      );
     if (status === 429) res.setHeader("Retry-After", "300");
     res
       .status(status)

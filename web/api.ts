@@ -22,10 +22,18 @@ async function raw(path: string, method = "GET", data?: unknown, key?: string) {
   });
 }
 let renewing: Promise<boolean> | null = null;
+let refreshAttempt: string | null = null;
 async function renew() {
   const run = async () => {
     if ((await raw("/auth/me")).ok) return true;
-    return (await raw("/auth/refresh", "POST", {})).ok;
+    refreshAttempt ??=
+      localStorage.getItem("nativos:refresh-attempt") ?? crypto.randomUUID();
+    localStorage.setItem("nativos:refresh-attempt", refreshAttempt);
+    const response = await raw("/auth/refresh", "POST", {}, refreshAttempt);
+    // This is only a request UUID, not an authentication token. Preserve on network failure.
+    localStorage.removeItem("nativos:refresh-attempt");
+    refreshAttempt = null;
+    return response.ok;
   };
   renewing ??= (
     navigator.locks

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit.test.ts",
-    "test:integration": "vitest run tests/integration.test.ts",
+    "test:integration": "vitest run tests/integration.test.ts tests/review-regressions.test.ts tests/db tests/security",
     "test:e2e": "playwright test",
     "db:migrate": "tsx server/migrate.ts",
     "db:bootstrap": "tsx server/bootstrap.ts",

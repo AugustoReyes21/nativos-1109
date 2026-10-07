@@ -127,7 +127,10 @@ describe('authentication and MFA', () => {
     const a = request.agent(server.app);
     const r = await post(a, '/api/auth/login', { email: 'kitchen@example.test', password });
     const refresh = (r.headers['set-cookie'] as unknown as string[]).find(v => v.startsWith('refresh='))!.split(';')[0]!;
-    const refreshOnce = () => request(server.app).post('/api/auth/refresh').set('Origin', origin).set('X-CSRF-Protection', '1').set('Cookie', refresh).send({});
+    // Reviewed design: only the same explicit attempt can recover a lost response.
+    // Arbitrary reuse, even inside the window, must still revoke the session.
+    const retryKey = randomUUID();
+    const refreshOnce = () => request(server.app).post('/api/auth/refresh').set('Origin', origin).set('X-CSRF-Protection', '1').set('Idempotency-Key', retryKey).set('Cookie', refresh).send({});
     expect((await refreshOnce()).status).toBe(200); // server rotated, but the tablet never received the response
     const retry = await refreshOnce();                 // the client retries with the only token it has
     expect(retry.status).toBe(200);

@@ -3,6 +3,7 @@ import { loadEnv } from "./env.js";
 import { config } from "./config.js";
 import { database } from "./db.js";
 import { createApp, logger } from "./app.js";
+import { diagnostic } from "./diagnostics.js";
 loadEnv();
 const c = config();
 const db = database(c);
@@ -68,3 +69,9 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
   void stop();
 });
+for (const event of ["uncaughtException", "unhandledRejection"] as const) {
+  process.on(event, (error: unknown) => {
+    logger.fatal({ ...diagnostic(error), event }, "process_failure");
+    process.exit(1);
+  });
+}
