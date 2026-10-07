@@ -149,6 +149,51 @@ describe('authentication and MFA', () => {
     expect((await a.get('/api/auth/me')).status).toBe(401);
   });
 
+  // Round 2: the recoverable-retry window must only help the client that sent
+  // the original attempt. Inside the 30 s window, any other replay revokes.
+  for (const [label, key] of [['a different attempt key', () => randomUUID()], ['no attempt key', () => undefined]] as const) {
+    it(`a refresh token replayed inside the retry window with ${label} revokes the session`, async () => {
+      const a = request.agent(server.app);
+      const r = await post(a, '/api/auth/login', { email: 'kitchen@example.test', password });
+      const refresh = (r.headers['set-cookie'] as unknown as string[]).find(v => v.startsWith('refresh='))!.split(';')[0]!;
+      expect((await replayRefresh(server.app, refresh, randomUUID())).status).toBe(200);
+      const replayKey = key();
+      const replay = replayKey ? await replayRefresh(server.app, refresh, replayKey) : await (async () => {
+        const csrf = await request(server.app).get('/api/auth/csrf').set('Cookie', refresh);
+        const cookies = (csrf.headers['set-cookie'] as unknown as string[]).map(v => v.split(';')[0]!);
+        return request(server.app).post('/api/auth/refresh').set('Origin', origin).set('X-CSRF-Protection', '1')
+          .set('X-CSRF-Token', csrf.body.token as string).set('Cookie', [refresh, ...cookies]).send({});
+      })();
+      expect(replay.status).toBe(401);
+      const session = await one<{ revoked: boolean }>(`SELECT s.revoked_at IS NOT NULL AS revoked FROM sessions s
+        JOIN refresh_tokens t ON t.session_id=s.id WHERE t.hash=encode(sha256(convert_to($1,'UTF8')),'hex')`, [refresh.slice('refresh='.length)]);
+      expect(session.revoked).toBe(true);
+    });
+  }
+
+  it('one IP spraying passwords across accounts is stopped before it can succeed', async () => {
+    // 101 failures spread over 11 accounts stay under the per-(account, IP)
+    // limit; the per-IP failure cap must then block, including a correct guess.
+    for (let n = 0; n < 101; n++) await post(request.agent(server.app), '/api/auth/login', { email: `spray${n % 11}@example.test`, password: `Wrong-password-${n}` });
+    expect((await post(request.agent(server.app), '/api/auth/login', { email: 'waitera@example.test', password })).status).toBe(429);
+  });
+
+  it('distributed guessing from many IPs against one account is capped per account', async () => {
+    // Simulates distinct client IPs behind a trusted proxy, as on Render.
+    server.app.set('trust proxy', true);
+    const attempt = async (ip: string, guess: string) => {
+      const a = request.agent(server.app);
+      const csrf = await a.get('/api/auth/csrf').set('X-Forwarded-For', ip);
+      return a.post('/api/auth/login').set('X-Forwarded-For', ip).set('Origin', origin).set('X-CSRF-Protection', '1')
+        .set('X-CSRF-Token', csrf.body.token as string).send({ email: 'cashier@example.test', password: guess });
+    };
+    try {
+      for (let ip = 1; ip <= 6; ip++) for (let n = 0; n < 9; n++) expect((await attempt(`203.0.113.${ip}`, `Guess-${ip}-${n}-password`)).status).toBe(401);
+      // 54 wrong guesses within minutes from 6 addresses: a 7th address must not get a fresh budget.
+      expect((await attempt('203.0.113.99', password)).status).toBe(429);
+    } finally { server.app.set('trust proxy', false); }
+  });
+
   it('a whole restaurant behind one NAT IP can still log in at shift change (25 logins)', async () => {
     // All tablets share the restaurant's public IP. Staff logging in at the
     // start of service must not be locked out for 15 minutes.
@@ -248,5 +293,27 @@ describe('kitchen display', () => {
       INSERT INTO order_items(order_id,product_id,name,quantity,price_cents) SELECT id,$3,'Refresco',1,1200 FROM o`, [ids.table, ids.users.waiterA, ids.soda]);
     const fresh = await order(agents.waiterA!, ids.soda);
     expect(((await agents.kitchen!.get('/api/orders')).body as { id: string }[]).map(o => o.id)).toContain(fresh.id);
+  });
+});
+
+describe('administration', () => {
+  it('two administrators demoting each other at once cannot leave the system without an MFA administrator', async () => {
+    const secret = 'KRUGS4ZANFZSAYJAOBUGCZLTMVZCA4TP';
+    const hash = await passwordHash(password); const created: string[] = [];
+    for (const n of ['x', 'y']) created.push((await one<{ id: string }>(`INSERT INTO users(email,name,password_hash,role,mfa_secret,mfa_enabled)
+      VALUES ($1,$1,$2,'ADMINISTRADOR',$3,true) RETURNING id`, [`admin${n}@example.test`, hash, encrypt(secret, c.MFA_KEY)])).id);
+    // The suite's own administrator must not count as the survivor.
+    await db.query(`UPDATE users SET active=false WHERE id=$1`, [ids.users.admin]);
+    try {
+      const [x, y] = await Promise.all(['adminx', 'adminy'].map(async n => {
+        const a = request.agent(server.app); await post(a, '/api/auth/login', { email: `${n}@example.test`, password });
+        expect((await post(a, '/api/auth/mfa/verify', { code: totp(secret).generate() })).status).toBe(200); return a;
+      }));
+      await db.query('DELETE FROM rate_limits');
+      const results = await Promise.all([patch(x!, `/api/users/${created[1]}`, { role: 'CAJERO', active: true }),
+        patch(y!, `/api/users/${created[0]}`, { role: 'CAJERO', active: true })]);
+      expect(results.filter(r => r.status === 200).length).toBeLessThanOrEqual(1);
+      expect((await one<{ n: number }>(`SELECT count(*)::int n FROM users WHERE role='ADMINISTRADOR' AND active AND mfa_enabled`)).n).toBeGreaterThanOrEqual(1);
+    } finally { await db.query(`UPDATE users SET active=true WHERE id=$1`, [ids.users.admin]); }
   });
 });

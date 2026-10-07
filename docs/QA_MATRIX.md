@@ -1,6 +1,6 @@
 # Matriz QA — Nativos1109
 
-Última ejecución: 2026-10-07, PostgreSQL 17 real, código de `codex/feature/secure-pos-foundation` (árbol sin commitear) + `migrations/002_integrity_guards.sql` + arreglo F01 aplicado en copia. Hallazgos `Fxx` en `docs/reviews/2026-10-07-foundation-review.md`.
+Última ejecución: 2026-10-07 (ronda 2), PostgreSQL 17 real, PR #2 HEAD `ca12e07` + pruebas de `claude/review/pr2-round2`. Hallazgos `Fxx` en `docs/reviews/2026-10-07-foundation-review.md`; `R2-xx` en `docs/reviews/2026-10-07-pr2-round2.md`. CI real (run 37645983092): 80 Vitest + 3 E2E.
 
 Fuentes de prueba: **C** = `tests/integration.test.ts` / `tests/unit.test.ts` (Codex) · **A** = `tests/security/api-adversarial.test.ts` · **D** = `tests/db/integrity.test.ts` · **E2E** = Playwright (aún no existe).
 
@@ -17,10 +17,13 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | JWT forjado, `alg:none` o de otro usuario rechazado | A *rejects forged, unsigned and cross-user access tokens* | ✅ |
 | Logout invalida el access token de inmediato | A *logout invalidates the access token immediately* | ✅ |
 | Rotación de refresh y revocación por reuso tardío | C *rotates refresh tokens*; A *stolen refresh token replayed later* | ✅ |
-| Reintento de refresh tras microcorte no desconecta | A *refresh retried after a lost response* | ❌ F03 |
+| Reintento de refresh tras microcorte no desconecta | A *refresh retried after a lost response* (misma clave) | ✅ |
+| Reuso dentro de la ventana con otra clave o sin clave revoca la sesión | A *replayed inside the retry window with a different attempt key / no attempt key* | ✅ |
 | Cookies HttpOnly + SameSite=Strict (+ Secure/`__Host-` en prod) | C *requires admin MFA...* (dev); prod ⏳ | ✅ / ⏳ |
 | CSRF: sin cabecera/origen ajeno → 403 | C *rejects missing CSRF protection, cross-origin* | ✅ |
-| Restaurante tras NAT puede iniciar turno (25 logins) | A *a whole restaurant behind one NAT IP* | ❌ F04 |
+| Restaurante tras NAT puede iniciar turno (25 logins) | A *a whole restaurant behind one NAT IP* | ✅ |
+| Una IP que rocía contraseñas en varias cuentas no logra entrar | A *one IP spraying passwords across accounts* | ❌ R2-01 |
+| Intentos distribuidos desde muchas IPs contra una cuenta tienen tope | A *distributed guessing from many IPs against one account* | ❌ R2-01 |
 | Un tercero no puede bloquear la cuenta de un empleado | ⏳ (requiere IPs distintas; ver F04) | ⏳ |
 | Recuperación: respuesta genérica, token de un uso, revoca sesiones | C *consumes recovery codes once and returns generic password reset* | ✅ |
 | Recuperación sin diferencia de tiempo por existencia de cuenta | ⏳ | ❌ F11 (por lectura) |
@@ -45,7 +48,7 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Crear categorías/mesas/productos; rechazar campos extra | C *enforces server permissions and rejects mass assignment* | ✅ |
 | Edición de stock con versión obsoleta → 409 | C *rejects stale administrative stock edits* | ✅ |
 | No puede cambiar su propio rol | ⏳ | ⏳ |
-| No puede quedar el sistema sin administradores | ⏳ | ❌ F17 (por lectura) |
+| No puede quedar el sistema sin administradores (carrera entre dos admins) | A *two administrators demoting each other at once* | ✅ |
 
 ## MESERO
 
@@ -62,7 +65,7 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Máquina de estados PENDIENTE→EN_PREPARACION→LISTO | C *validates the kitchen state machine* | ✅ |
 | No crea órdenes, no cobra, no ve usuarios | A *authorization* (3 casos) | ✅ |
 | No cancela ni entrega | A *kitchen cannot cancel or deliver* | ✅ |
-| Ve toda orden nueva aunque haya >200 en 24 h | A *a new order is visible to the kitchen even on a busy day* | ❌ F02 |
+| Ve toda orden nueva aunque haya >200 en 24 h | A *a new order is visible to the kitchen even on a busy day* | ✅ (rendimiento: R2-05) |
 | Varias pantallas de cocina reciben la misma orden | ⏳ E2E | ⏳ |
 
 ## CAJERO
@@ -86,11 +89,11 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Requisito | Prueba | Resultado |
 | --- | --- | --- |
 | Total y precio calculados en servidor; campos de dinero del cliente → 400 | A *ignores no client-provided money* | ✅ |
-| Total ≠ suma de ítems imposible en BD | D *order totals* (2) | ✅ con 002 / ❌ sin 002 (F05) |
+| Total ≠ suma de ítems imposible en BD | D *order totals* (2) | ✅ |
 | Cantidades límite y malformadas → 400 | A *rejects boundary and malformed quantities* (7 valores) | ✅ |
-| Unicode/emoji aceptados; NUL → 4xx, nunca 500 | A *accepts Unicode and emoji...* | ❌ F08 |
+| Unicode/emoji aceptados; NUL → 4xx, nunca 500 | A *accepts Unicode and emoji...* | ✅ |
 | Doble envío con misma clave → una sola orden | C *replays concurrent duplicate orders once* | ✅ |
-| Orden cancelada es final; pagada+entregada no se reabre; timestamps inmutables | D *order lifecycle* (4) | ✅ con 002 / ❌ sin 002 |
+| Orden cancelada es final; pagada+entregada no se reabre; timestamps inmutables | D *order lifecycle* (4) | ✅ |
 | Agregar ítems a una orden abierta | — | ⏳ requisito sin confirmar |
 
 ## PAGO
@@ -101,17 +104,17 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Reintento idéntico devuelve el mismo pago | C *prevents double payment... replays identical attempts* | ✅ |
 | Pago insuficiente / tarjeta con importe distinto → 400 | A *cannot cancel after charging...* | ✅ |
 | No cancelar tras cobrar; no cobrar cancelada | A *cannot cancel after charging...* | ✅ |
-| Importe = total, caja abierta, inmutable (BD) | D *payments* (4) | ✅ con 002 / ❌ sin 002 |
-| Ítems no cambian tras el cobro, incluso en carrera | D *item changes racing a payment* | ✅ con 002 / ❌ sin 002 |
+| Importe = total, caja abierta, inmutable (BD) | D *payments* (4) | ✅ |
+| Ítems no cambian tras el cobro, incluso en carrera | D *item changes racing a payment* | ✅ |
 
 ## CAJA
 
 | Requisito | Prueba | Resultado |
 | --- | --- | --- |
 | Solo una caja abierta | D *rejects a second open shift* | ✅ |
-| Cierre con esperado y diferencia exactos | C *closes cash with exact expected balance* | ❌ F01 (✅ con arreglo) |
-| Cerrar dos veces: segunda rechazada, conteo intacto | A *closing the register twice* | ❌ F01 (✅ con arreglo) |
-| Caja cerrada inmutable; sin movimientos en caja cerrada | D *cash register* (2) | ✅ con 002 / ❌ sin 002 |
+| Cierre con esperado y diferencia exactos | C *closes cash with exact expected balance* | ✅ |
+| Cerrar dos veces: segunda rechazada, conteo intacto | A *closing the register twice* | ✅ |
+| Caja cerrada inmutable; sin movimientos en caja cerrada | D *cash register* (2) | ✅ |
 
 ## TIEMPO REAL (SSE — no se usa WebSocket)
 
@@ -135,9 +138,12 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | --- | --- | --- |
 | Cabeceras CSP/nosniff/frame-ancestors | C *returns security headers* | ✅ |
 | Bitácora sin contraseñas ni tokens | C *returns security headers and never includes password/token* | ✅ |
-| Bitácora append-only | D *audit log is append-only* | ✅ con 002 / ❌ sin 002 |
-| 500 registran causa sin secretos | ⏳ | ❌ F06 (por lectura) |
+| Bitácora append-only | D *audit log is append-only* | ✅ |
+| 500 registran causa sin secretos | lectura de `server/diagnostics.ts` | ✅ (sin prueba de salida) |
 | `npm audit --omit=dev` sin HIGH/CRITICAL | manual | ✅ (0) |
-| Escaneo de secretos | `npm run scan:secrets` | ❌ F15 (script inexistente) |
-| Lint y typecheck limpios | `npm run lint`, `npm run typecheck` | ❌ F18 (trabajo en curso) |
+| Escaneo de secretos | `npm run scan:secrets` + gitleaks en CI | ✅ |
+| Lint y typecheck limpios | `npm run lint`, `npm run typecheck` | ✅ |
+| El CI bloquea merges con checks en rojo | protección de `main` | ❌ R2-02 (rama sin protección) |
+| Un `test.only` olvidado hace fallar el CI E2E | `forbidOnly` comprobado con `CI=1` | ✅ (rama round2) |
+| Backups y persistencia de la BD de producción | `render.yaml` | ❌ R2-03 (plan free: expira a 30 días, sin backups) |
 | `trust proxy` correcto en Render | manual en Render | ⏳ T-NET-3 |

@@ -1,6 +1,6 @@
 # Modelo de amenazas — Nativos1109
 
-Versión 0.1 · 2026-10-07 · Responsable: Claude. Basado en el código real de `codex/feature/secure-pos-foundation` (sin PR aún), no en la documentación prevista. Se actualiza en cada PR que cambie límites de confianza, autenticación o dinero.
+Versión 0.2 · 2026-10-07 (ronda 2, PR #2 `ca12e07`) · Responsable: Claude. Basado en el código real de `codex/feature/secure-pos-foundation` (sin PR aún), no en la documentación prevista. Se actualiza en cada PR que cambie límites de confianza, autenticación o dinero.
 
 Estado de cada control: **Verificado** (prueba automatizada pasando), **Implementado** (en código, sin prueba propia), **Propuesto**, **Brecha**.
 
@@ -68,12 +68,12 @@ Estado de cada control: **Verificado** (prueba automatizada pasando), **Implemen
 
 | ID | STRIDE | Amenaza | Control actual | Estado |
 | --- | --- | --- | --- | --- |
-| T-AUTH-1 | S | Fuerza bruta de contraseña | Argon2id + límite por IP y por cuenta | Implementado; **Brecha** F04 (bloqueo de cuentas ajenas, NAT) |
+| T-AUTH-1 | S | Fuerza bruta de contraseña | Argon2id + límite por IP y por cuenta | NAT y bloqueo dirigido resueltos (F04). **Brecha** R2-01: sin tope por cuenta entre IPs y tope por IP evaluado tras Argon2 (reproducido) |
 | T-AUTH-2 | I | Enumeración de usuarios en login | Hash ficticio para emails inexistentes, mensaje único | Implementado |
 | T-AUTH-3 | I | Enumeración por recuperación | Respuesta idéntica | **Brecha** F11 (tiempo SMTP) |
 | T-AUTH-4 | S | JWT fabricado / `alg:none` / de otro usuario | HS256 fijo, iss/aud/exp, sesión + sub en BD | **Verificado** |
 | T-AUTH-5 | S | JWT expirado | `jose` valida `exp` | **Verificado** (prueba de Codex) |
-| T-AUTH-6 | S | Reutilizar refresh robado | Rotación + detección de reuso → revoca sesión | **Verificado**; **Brecha** F03 (falso positivo por microcorte) |
+| T-AUTH-6 | S | Reutilizar refresh robado | Rotación + detección de reuso → revoca sesión | **Verificado**, incluido reintento con misma clave y revocación con otra clave/sin clave (003) |
 | T-AUTH-7 | E | Sesión tras logout / desactivación / cambio de rol | Revocación en BD revisada en cada petición y en cada tick SSE | **Verificado** (logout), Implementado (rol) |
 | T-AUTH-8 | S | Fijación de sesión | Sesión y cookies nuevas tras login/MFA | Implementado |
 | T-AUTH-9 | I | Robo de token por XSS | Cookies HttpOnly; CSP `script-src 'self'` | Implementado; revisar UI completa |
@@ -99,12 +99,12 @@ Estado de cada control: **Verificado** (prueba automatizada pasando), **Implemen
 | T-AZ-1 | E | Mesero/cajero/cocina a endpoints administrativos | `permit()` por permiso en servidor | **Verificado** (17 casos) |
 | T-AZ-2 | E | IDOR entre meseros | Filtro por `user_id` en lista y `ownedOrder` | **Verificado** |
 | T-AZ-3 | E | Mass assignment (`role`, `total`, `status`) | Zod `.strict()` | **Verificado** |
-| T-AZ-4 | E | Dejar el sistema sin administradores | Ninguno | **Brecha** F17 |
+| T-AZ-4 | E | Dejar el sistema sin administradores | Advisory lock + comprobación | **Verificado** (carrera entre dos admins) |
 | T-BIZ-1 | T | Total/precio desde el cliente | Precio y total calculados en servidor | **Verificado**; BD **Propuesto** (002) |
 | T-BIZ-2 | T | Sobreventa del último producto | `FOR UPDATE` ordenado + `CHECK stock>=0` | **Verificado** (API y BD) |
 | T-BIZ-3 | T | Doble cobro | Bloqueo de orden + `UNIQUE(order_id)` + idempotencia | **Verificado** |
 | T-BIZ-4 | T | Cancelar tras cobrar / cobrar cancelada / reabrir | Comprobación en API | **Verificado** (API); BD **Propuesto** (002) |
-| T-BIZ-5 | R | Alterar o borrar pagos, cierres, bitácora | Ninguno en BD | **Brecha** F05 → 002 |
+| T-BIZ-5 | R | Alterar o borrar pagos, cierres, bitácora | Triggers 002/003 | **Verificado** (19 pruebas BD) |
 | T-BIZ-6 | T | Alterar timestamps | `now()` del servidor | Implementado; BD **Propuesto** (002) |
 | T-BIZ-7 | T | Doble clic crea dos órdenes | `Idempotency-Key` por intento | Implementado; verificar que la UI reutiliza la clave en reintentos |
 
@@ -115,9 +115,9 @@ Estado de cada control: **Verificado** (prueba automatizada pasando), **Implemen
 | T-NET-1 | D | Agotar memoria/threadpool con logins | Límite por IP | **Brecha** menor F10 (320 MiB pico medido) |
 | T-NET-2 | D | Cola de conexiones BD agotada | Pool 15, `statement_timeout` 10 s, `lock_timeout` 5 s | Implementado; sin prueba de carga |
 | T-NET-3 | S/D | `X-Forwarded-For` falsificado o saltos mal contados | `trust proxy = 1` | **Por verificar en Render**: desplegar, registrar temporalmente `req.ips` de una petición conocida y confirmar que `req.ip` es la IP pública real. Si no, todos comparten bucket (DoS) o un atacante elige su IP (bypass) |
-| T-NET-4 | D | Microcortes / cambio de AP | Idempotencia, SSE con reconexión, mensaje “sin conexión” | Implementado; **Brecha** F03, F16 |
+| T-NET-4 | D | Microcortes / cambio de AP | Idempotencia, SSE con reconexión, mensaje “sin conexión” | Implementado; F03 resuelto; **Brecha** F16 (sin prueba de jornada) |
 | T-NET-5 | D | Crecimiento ilimitado de tablas auxiliares | Ninguno | **Brecha** F14 |
-| T-NET-6 | D | Pérdida de visibilidad en cocina | — | **Brecha** F02 |
+| T-NET-6 | D | Pérdida de visibilidad en cocina | Activas siempre visibles | **Verificado**; rendimiento R2-05 |
 
 ### Datos, logs y secretos
 
@@ -126,8 +126,8 @@ Estado de cada control: **Verificado** (prueba automatizada pasando), **Implemen
 | T-DB-1 | T | SQL injection | Consultas parametrizadas; único identificador interpolado proviene de lista fija | Implementado (revisión manual) |
 | T-DB-2 | T/R | Rol de app con privilegios de propietario puede desactivar triggers | Ninguno (Render usa el propietario) | Riesgo aceptado temporalmente; Propuesto: rol de migración separado del rol de app |
 | T-LOG-1 | I | Secretos en logs | `pino` con `redact`; se registra `path` sin query; token de reset en fragmento `#` | Implementado; prueba de bitácora sin contraseñas (Codex) |
-| T-LOG-2 | R | 500 sin causa registrada | — | **Brecha** F06 |
-| T-LOG-3 | R | Bitácora sin contexto | — | **Brecha** F07 |
+| T-LOG-2 | R | 500 sin causa registrada | `diagnostic()` sin mensajes ni parámetros | Implementado |
+| T-LOG-3 | R | Bitácora sin contexto | `audit_log.details` + índice por recurso | Implementado (NIT: movimientos de caja y creación de orden sin detalle) |
 | T-SEC-1 | I | Secretos en repositorio | `.gitignore`, `.env.example` sin valores reales | Verificado manualmente (árbol + historial) |
 | T-SUP-1 | T | Dependencia vulnerable | `npm audit` | Producción: 0 vulnerabilidades. Gate en CI pendiente |
 
@@ -137,3 +137,9 @@ Estado de cada control: **Verificado** (prueba automatizada pasando), **Implemen
 2. MFA no obligatorio para cajeros (manejan dinero). Recomendación: hacerlo obligatorio o al menos para abrir/cerrar caja.
 3. Sin ventas offline (decisión de diseño): con Internet caído el restaurante no puede registrar ventas en el sistema; requiere procedimiento manual de contingencia.
 4. Rol de base de datos propietario (T-DB-2) hasta que Render permita/añadamos un rol separado.
+
+## 7. Cambios de la ronda 2
+
+- Nuevo límite de confianza B8: **GitHub → Render**. `autoDeployTrigger: checksPass`, pero `main` no está protegida (R2-02): el CI no impide fusionar código con pruebas rojas.
+- Disponibilidad de datos: `render.yaml` con Postgres gratuito, que expira a los 30 días y no admite backups (R2-03). Riesgo de pérdida total; inaceptable en producción.
+- CSRF reforzado con token de doble envío firmado y ligado a refresh/desafío/binding anónimo (Codex, cubierto por `tests/review-regressions.test.ts`).
