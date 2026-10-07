@@ -4,6 +4,10 @@ Estado: primera implementación; revisión cruzada pendiente.
 
 ## Componentes
 
+Sala de dos niveles (PR #7): `restaurant_tables` guarda nivel, capacidad, forma y orden visual; versión optimista evita sobrescribir cambios administrativos concurrentes. `GET /api/tables/status` expone estado operativo global mínimo con autorización `orders.read`, separado de detalles de órdenes restringidos al mesero. Solo `payments.create` obtiene pendientes monetarios. SSE dispara recarga del catálogo/estado. `FloorPlan.tsx` renderiza SVG nativo y Motion; no depende de imágenes remotas ni fuentes externas. El borrador vive en App, no en web storage.
+
+006 fija `orders.table_name/table_floor` al insertar, bajo lock compartido de mesa; trigger impide modificación posterior, incluso por SQL directo. KDS/recibo usan snapshot y no nombre actual. Backfill de historial previo con valores actuales, documentado; ninguna migración aplicada se reescribe.
+
 React/Vite sirve una SPA desde Express en el mismo origen HTTPS. Express valida inputs con Zod, autentica cookies y consulta permisos vigentes en PostgreSQL antes de las operaciones. PostgreSQL es la autoridad para inventario, estados, pagos y caja. No hay almacenamiento de tokens en localStorage/sessionStorage, uploads ni acceso a URLs suministradas por usuarios.
 
 Módulos: `config.ts` valida configuración; `auth.ts` maneja sesiones/MFA; `pos.ts` maneja catálogo/órdenes/caja; `db.ts` delimita transacciones; `common.ts` centraliza errores, auditoría e idempotencia; `app.ts` aplica protección web y SSE. React se divide por flujo funcional. El diseño aún admite separar servicios cuando crezca; evitar capas sin beneficio verificable.

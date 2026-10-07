@@ -25,6 +25,7 @@ function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
+  const contentRef = useRef<HTMLElement>(null);
   const attempts = useRef(new Map<string, string>());
   const [connected, setConnected] = useState(false);
   const [catalog, setCatalog] = useState<Catalog>({
@@ -39,6 +40,9 @@ function App() {
   const [orderTable, setOrderTable] = useState<string | null>(null);
   const [cash, setCash] = useState<Shift[]>([]);
   const [view, setView] = useState("ordenes");
+  useEffect(() => {
+    if (user) contentRef.current?.focus({ preventScroll: true });
+  }, [view, user]);
   const [resetToken] = useState(() =>
     location.hash.startsWith("#reset=") ? location.hash.slice(7) : "",
   );
@@ -342,7 +346,7 @@ function App() {
           </small>
         </div>
       </nav>
-      <main className="content">
+      <main className="content" ref={contentRef} tabIndex={-1}>
         {feedback}
         {view === "salon" && (
           <FloorPlan

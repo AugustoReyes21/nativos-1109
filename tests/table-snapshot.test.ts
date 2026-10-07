@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createApp } from "../server/app.js";
 import { csrfPost, seedUsers, testDatabase, testPassword } from "./helpers.js";
 import { totp } from "../server/security.js";
@@ -175,5 +176,92 @@ describe("table metadata and historical snapshots", () => {
       ).status,
     ).toBe(200);
     expect(await state()).toMatchObject({ state: "available", openOrders: 0 });
+  });
+  it("upgrades existing paid and cancelled history transactionally and restores integrity guards", async () => {
+    const tx = await context.db.connect();
+    try {
+      await tx.query("BEGIN");
+      // Fully isolated disposable schema; rollback removes only this fixture.
+      await tx.query("CREATE SCHEMA snapshot_upgrade_fixture");
+      await tx.query(
+        "SET LOCAL search_path TO snapshot_upgrade_fixture, public",
+      );
+      for (const file of [
+        "001_initial.sql",
+        "002_integrity_guards.sql",
+        "003_session_retry_audit.sql",
+        "004_order_paid_marker.sql",
+        "005_dining_floors.sql",
+      ]) {
+        await tx.query(await readFile(`migrations/${file}`, "utf8"));
+      }
+      const user = (
+        await tx.query(
+          "INSERT INTO users(email,name,password_hash,role) VALUES('migration@example.test','Migration','fixture','ADMINISTRADOR') RETURNING id",
+        )
+      ).rows[0].id as string;
+      const table = (
+        await tx.query(
+          "INSERT INTO restaurant_tables(name,floor) VALUES('Histórica',2) RETURNING id",
+        )
+      ).rows[0].id as string;
+      const cat = (
+        await tx.query(
+          "INSERT INTO categories(name) VALUES('Migration') RETURNING id",
+        )
+      ).rows[0].id as string;
+      const product = (
+        await tx.query(
+          "INSERT INTO products(name,category_id,price_cents,stock) VALUES('Fixture',$1,100,1) RETURNING id",
+          [cat],
+        )
+      ).rows[0].id as string;
+      const shift = (
+        await tx.query(
+          "INSERT INTO cash_shifts(user_id,opening_cents) VALUES($1,0) RETURNING id",
+          [user],
+        )
+      ).rows[0].id as string;
+      for (const paid of [false, true]) {
+        const order = (
+          await tx.query(
+            "INSERT INTO orders(table_id,user_id,total_cents) VALUES($1,$2,100) RETURNING id",
+            [table, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          "INSERT INTO order_items(order_id,product_id,name,price_cents,quantity) VALUES($1,$2,'Fixture',100,1)",
+          [order, product],
+        );
+        if (paid)
+          await tx.query(
+            "INSERT INTO payments(order_id,shift_id,user_id,method,amount_cents,tendered_cents,change_cents) VALUES($1,$2,$3,'EFECTIVO',100,100,0)",
+            [order, shift, user],
+          );
+        else
+          await tx.query("UPDATE orders SET status='CANCELADO' WHERE id=$1", [
+            order,
+          ]);
+      }
+      await tx.query("SET CONSTRAINTS ALL IMMEDIATE");
+      await tx.query(
+        await readFile("migrations/006_order_table_snapshot.sql", "utf8"),
+      );
+      const history = await tx.query(
+        "SELECT table_name,table_floor FROM orders",
+      );
+      expect(history.rows).toEqual([
+        { table_name: "Histórica", table_floor: 2 },
+        { table_name: "Histórica", table_floor: 2 },
+      ]);
+      await expect(
+        tx.query(
+          "UPDATE orders SET status='PENDIENTE' WHERE status='CANCELADO'",
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
+    } finally {
+      await tx.query("ROLLBACK");
+      tx.release();
+    }
   });
 });
