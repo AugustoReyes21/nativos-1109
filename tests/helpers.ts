@@ -4,6 +4,42 @@ import { config } from "../server/config.js";
 import { database } from "../server/db.js";
 import { migrate } from "../server/migrate.js";
 import { passwordHash } from "../server/security.js";
+import request from "supertest";
+export async function csrfPost(
+  agent: ReturnType<typeof request.agent>,
+  method: "post" | "patch",
+  path: string,
+  body: object,
+  key: string,
+) {
+  const token = await agent.get("/api/auth/csrf");
+  if (token.status !== 200)
+    throw new Error("CSRF fixture failed: " + token.status);
+  return agent[method](path)
+    .set("Origin", origin)
+    .set("X-CSRF-Protection", "1")
+    .set("X-CSRF-Token", token.body.token as string)
+    .set("Idempotency-Key", key)
+    .send(body);
+}
+export async function replayRefresh(
+  app: Parameters<typeof request>[0],
+  refresh: string,
+  key: string,
+) {
+  const token = await request(app).get("/api/auth/csrf").set("Cookie", refresh);
+  const cookies = (token.headers["set-cookie"] as unknown as string[]).map(
+    (cookie) => cookie.split(";")[0]!,
+  );
+  return request(app)
+    .post("/api/auth/refresh")
+    .set("Origin", origin)
+    .set("X-CSRF-Protection", "1")
+    .set("X-CSRF-Token", token.body.token as string)
+    .set("Idempotency-Key", key)
+    .set("Cookie", [refresh, ...cookies])
+    .send({});
+}
 export const testPassword = "Integration-test-password-2026";
 export const origin = "http://localhost:3000";
 export const testConfig = () =>

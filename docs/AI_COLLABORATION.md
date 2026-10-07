@@ -43,3 +43,6 @@ Decisión explícita F03: misma clave idempotente + token anterior permite recup
 74 tests + 3 E2E pasan localmente. Último baseline ZAP no tiene riesgos low/medium/high, solo información de SPA/cache. API de GitHub todavía reporta 0 runs/checks pese a workflows publicados y Actions habilitado; no se presume CI verde. El push falló temporalmente con 500 y luego se recuperó; no hubo force push.
 
 F11/F14/F16 prolongado/F19 y trabajo funcional pendiente están documentados. Se requiere segunda revisión del commit final; no cerrar el issue ni aprobar el PR automáticamente. Render está solicitado pero no conectado todavía.
+# Actualización Codex — gate SAST y CSRF
+
+CI remoto ya funciona. La primera ejecución verde omitió severidades de reglas CodeQL en SARIF extensions: corregido con regresiones fail-closed, sin excluir hallazgos. Se agregan capa pre-DB de ráfaga y tokens CSRF firmados ligados a credencial. Coordinación avisada en issue #1 antes de publicar. En la suite adversarial de Claude se adapta solo el helper HTTP y replay de refresh al contrato CSRF; se conservan las aserciones. Revisión final sigue pendiente, PR #2 sigue borrador. 80 tests locales pasan; evidencia remota final se publicará en el PR.

@@ -79,6 +79,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       cook.getByRole("heading", { name: "Cocina", exact: true }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Salir", exact: true }).click();
+    await expect(page.getByLabel("Correo", { exact: true })).toBeVisible();
     await login(page, emails.MESERO!);
     await page
       .getByRole("button", { name: "Nueva orden", exact: true })
@@ -137,6 +138,7 @@ test("administrator → waiter → live kitchen → cashier with reconnect and r
       fullPage: true,
     });
     await page.getByRole("button", { name: "Salir", exact: true }).click();
+    await expect(page.getByLabel("Correo", { exact: true })).toBeVisible();
     await login(page, emails.CAJERO!);
     await page.getByRole("button", { name: "Caja", exact: true }).click();
     await page.getByLabel("Fondo inicial (Q)").fill("100");

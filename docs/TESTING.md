@@ -52,3 +52,8 @@ Repetición final con migraciones 001+002+003: 396 recorridos, 2777 requests, 27
 Smoke del contenedor Linux en NODE_ENV=production: readiness 200, UI estática 200, HSTS presente y hash/verificación Argon2id nativo correctos. No equivale a despliegue Render.
 
 Primer DAST remoto detectó que NODE_ENV=test del workflow afectaba el bundle React y emitía avisos de comentarios/timestamps de dependencias de desarrollo. El build web ahora fija NODE_ENV=production dentro de su proceso, independientemente del entorno de tests. No se silenciaron alertas. Se corrigió también la subida de reportes ZAP desde el directorio oculto de artefactos.
+# Revalidación de seguridad HTTP y CI
+
+La suite ahora incluye 80 pruebas: 3 nuevas de lectura SARIF (extensiones/defaults/fail-closed) y 3 de CSRF/rate limiting además de las 74 existentes. Los clientes de prueba obtienen `GET /api/auth/csrf` antes de mutar; los replays de refresh siguen enviando la credencial anterior y la clave original, no se debilitan las aserciones de robo/reutilización.
+
+CodeQL se verifica por alertas individuales y por gate local del SARIF. Un job verde anterior omitía metadatos en extensions; no usar esa ejecución como evidencia de ausencia de alertas. Resultados finales por commit: PR #2. La carga previa al token firmado no describe el rendimiento de la nueva versión: se requiere reejecutar `load/pos.js` actualizado.

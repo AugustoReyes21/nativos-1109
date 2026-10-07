@@ -11,6 +11,7 @@ import { config, type Config } from '../../server/config.js';
 import { database, type DB } from '../../server/db.js';
 import { migrate } from '../../server/migrate.js';
 import { encrypt, passwordHash, totp } from '../../server/security.js';
+import { csrfPost, replayRefresh } from '../helpers.js';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error('TEST_DATABASE_URL is required for adversarial API tests');
@@ -25,7 +26,7 @@ let ids: { category: string; table: string; burger: string; soda: string; users:
 const agents: Record<string, Agent> = {};
 
 const send = (a: Agent, method: 'post' | 'patch', path: string, body: unknown, key: string = randomUUID()) =>
-  a[method](path).set('Origin', origin).set('X-CSRF-Protection', '1').set('Idempotency-Key', key).send(body as object);
+  csrfPost(a, method, path, body as object, key);
 const post = (a: Agent, path: string, body: unknown, key?: string) => send(a, 'post', path, body, key);
 const patch = (a: Agent, path: string, body: unknown) => send(a, 'patch', path, body);
 const one = async <T extends pg.QueryResultRow>(sql: string, params: unknown[] = []) => (await db.query<T>(sql, params)).rows[0]!;
@@ -130,7 +131,7 @@ describe('authentication and MFA', () => {
     // Reviewed design: only the same explicit attempt can recover a lost response.
     // Arbitrary reuse, even inside the window, must still revoke the session.
     const retryKey = randomUUID();
-    const refreshOnce = () => request(server.app).post('/api/auth/refresh').set('Origin', origin).set('X-CSRF-Protection', '1').set('Idempotency-Key', retryKey).set('Cookie', refresh).send({});
+    const refreshOnce = () => replayRefresh(server.app, refresh, retryKey);
     expect((await refreshOnce()).status).toBe(200); // server rotated, but the tablet never received the response
     const retry = await refreshOnce();                 // the client retries with the only token it has
     expect(retry.status).toBe(200);
@@ -144,7 +145,7 @@ describe('authentication and MFA', () => {
     const refresh = (r.headers['set-cookie'] as unknown as string[]).find(v => v.startsWith('refresh='))!.split(';')[0]!;
     expect((await post(a, '/api/auth/refresh', {})).status).toBe(200);
     await db.query(`UPDATE refresh_tokens SET used_at=now()-interval '10 minutes' WHERE used_at IS NOT NULL`);
-    expect((await request(server.app).post('/api/auth/refresh').set('Origin', origin).set('X-CSRF-Protection', '1').set('Cookie', refresh).send({})).status).toBe(401);
+    expect((await replayRefresh(server.app, refresh, randomUUID())).status).toBe(401);
     expect((await a.get('/api/auth/me')).status).toBe(401);
   });
 

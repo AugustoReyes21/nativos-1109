@@ -1,5 +1,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import cookieParser from "cookie-parser";
+import { rateLimit } from "express-rate-limit";
+import { doubleCsrf } from "csrf-csrf";
 import helmet from "helmet";
 import { pino } from "pino";
 import { randomUUID } from "node:crypto";
@@ -12,6 +14,7 @@ import type { DB } from "./db.js";
 import { AppError, fail } from "./common.js";
 import { pos } from "./pos.js";
 import { diagnostic } from "./diagnostics.js";
+import { digest, randomToken } from "./security.js";
 
 export const logger = pino({
   level: process.env.NODE_ENV === "test" ? "silent" : "info",
@@ -68,6 +71,24 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
       crossOriginEmbedderPolicy: { policy: "require-corp" },
     }),
   );
+  // Per-process overload protection precedes DB work. Persistent, stricter
+  // login/MFA/reset/refresh/admin limits below remain authoritative across replicas.
+  app.use(
+    rateLimit({
+      windowMs: 10000,
+      limit: 3000,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      handler: (_req, _res, next) =>
+        next(
+          new AppError(
+            429,
+            "RATE_LIMITED",
+            "Demasiadas solicitudes. Intenta más tarde",
+          ),
+        ),
+    }),
+  );
   app.use((req, res, next) => {
     res.setHeader(
       "Permissions-Policy",
@@ -87,7 +108,7 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Content-Type,Idempotency-Key,X-CSRF-Protection",
+        "Content-Type,Idempotency-Key,X-CSRF-Protection,X-CSRF-Token",
       );
       return res.sendStatus(204);
     }
@@ -103,6 +124,55 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
   });
   app.use(express.json({ limit: "32kb" }));
   app.use(cookieParser());
+  const prefix = c.NODE_ENV === "production" ? "__Host-" : "";
+  const cookieOptions = {
+    httpOnly: true,
+    secure: c.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    path: "/",
+  };
+  const csrf = doubleCsrf({
+    getSecret: () => digest("nativos-csrf-v1:" + c.JWT_SECRET),
+    getSessionIdentifier: (req) => {
+      // Bind to the refresh credential, then the pre-login challenge, then a
+      // random anonymous browser binding. Authentication changes invalidate tokens.
+      for (const name of ["refresh", "challenge", "csrf-binding"]) {
+        const value: unknown = req.cookies[prefix + name];
+        if (typeof value === "string" && value) return name + ":" + value;
+      }
+      return fail(403, "CSRF_REJECTED", "Solicitud no permitida");
+    },
+    cookieName: prefix + "csrf",
+    cookieOptions,
+    getCsrfTokenFromRequest: (req) => req.get("X-CSRF-Token"),
+  });
+  app.get("/api/auth/csrf", (req, res) => {
+    // cookie-parser can decode JSON-prefixed cookies; malformed client values
+    // must not reach the library's string parser or become a server error.
+    if (typeof req.cookies[prefix + "csrf"] !== "string")
+      delete req.cookies[prefix + "csrf"];
+    if (typeof req.cookies[prefix + "csrf-binding"] !== "string") {
+      const binding = randomToken();
+      req.cookies[prefix + "csrf-binding"] = binding;
+      res.cookie(prefix + "csrf-binding", binding, cookieOptions);
+    }
+    res.json({ token: csrf.generateCsrfToken(req, res) });
+  });
+  app.use((req, res, next) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+      // Explicit cookie/header comparison plus signed, session-bound HMAC
+      // validation: matching attacker-controlled strings alone never suffice.
+      const token: unknown =
+        c.NODE_ENV === "production"
+          ? req.cookies["__Host-csrf"]
+          : req.cookies.csrf;
+      if (typeof token !== "string" || token !== req.get("X-CSRF-Token"))
+        return next(
+          new AppError(403, "CSRF_REJECTED", "Solicitud no permitida"),
+        );
+    }
+    csrf.doubleCsrfProtection(req, res, next);
+  });
   app.get("/health/live", (_req, res) => res.json({ status: "ok" }));
   app.get(["/health", "/health/ready"], async (_req, res) => {
     try {
@@ -184,6 +254,10 @@ export function createApp(db: DB, c: Config, mail: Mailer) {
       status = error.status;
       code = error.code;
       message = error.message;
+    } else if (error === csrf.invalidCsrfTokenError) {
+      status = 403;
+      code = "CSRF_REJECTED";
+      message = "Solicitud no permitida";
     } else if (error instanceof ZodError) {
       status = 400;
       code = "VALIDATION_ERROR";

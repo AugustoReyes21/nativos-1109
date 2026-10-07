@@ -7,19 +7,57 @@ export class ApiError extends Error {
     super(message);
   }
 }
-async function raw(path: string, method = "GET", data?: unknown, key?: string) {
+async function rawRequest(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  key?: string,
+) {
+  let csrfToken: string | undefined;
+  if (method !== "GET") {
+    // Read a token for the current credential before mutations; never persist it.
+    const tokenResponse = await fetch("/api/auth/csrf", {
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!tokenResponse.ok) return tokenResponse;
+    csrfToken = ((await tokenResponse.json()) as { token: string }).token;
+  }
   return fetch(`/api${path}`, {
     method,
     credentials: "same-origin",
     headers: {
       ...(method !== "GET"
-        ? { "Content-Type": "application/json", "X-CSRF-Protection": "1" }
+        ? {
+            "Content-Type": "application/json",
+            "X-CSRF-Protection": "1",
+            "X-CSRF-Token": csrfToken!,
+          }
         : {}),
       ...(key ? { "Idempotency-Key": key } : {}),
     },
     body: data === undefined ? undefined : JSON.stringify(data),
     signal: AbortSignal.timeout(15000),
   });
+}
+let mutationQueue: Promise<unknown> = Promise.resolve();
+function raw(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  key?: string,
+): Promise<Response> {
+  const run = () => rawRequest(path, method, data, key);
+  if (method === "GET") return run();
+  // Cookie rotation and token issuance are serialized across tabs where supported.
+  if (navigator.locks)
+    return navigator.locks.request("nativos-csrf-mutation", run);
+  const operation = mutationQueue.then(run, run);
+  mutationQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 let renewing: Promise<boolean> | null = null;
 let refreshAttempt: string | null = null;

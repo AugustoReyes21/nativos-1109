@@ -5,7 +5,13 @@ import { SignJWT } from "jose";
 import { createApp } from "../server/app.js";
 import { migrate } from "../server/migrate.js";
 import { digest, totp } from "../server/security.js";
-import { origin, seedUsers, testDatabase, testPassword } from "./helpers.js";
+import {
+  seedUsers,
+  testDatabase,
+  testPassword,
+  csrfPost,
+  replayRefresh,
+} from "./helpers.js";
 
 describe("PostgreSQL-backed API", () => {
   let context: Awaited<ReturnType<typeof testDatabase>>;
@@ -26,24 +32,12 @@ describe("PostgreSQL-backed API", () => {
     url: string,
     data: object,
     key: string = randomUUID(),
-  ) =>
-    agent
-      .post(url)
-      .set("Origin", origin)
-      .set("X-CSRF-Protection", "1")
-      .set("Idempotency-Key", key)
-      .send(data);
+  ) => csrfPost(agent, "post", url, data, key);
   const patch = (
     agent: ReturnType<typeof request.agent>,
     url: string,
     data: object,
-  ) =>
-    agent
-      .patch(url)
-      .set("Origin", origin)
-      .set("X-CSRF-Protection", "1")
-      .set("Idempotency-Key", randomUUID())
-      .send(data);
+  ) => csrfPost(agent, "patch", url, data, randomUUID());
   beforeAll(async () => {
     context = await testDatabase();
     await seedUsers(context.db);
@@ -347,14 +341,7 @@ describe("PostgreSQL-backed API", () => {
     ).toBe(401);
     expect((await post(agent, "/api/auth/refresh", {})).status).toBe(200);
     expect(
-      (
-        await request(server.app)
-          .post("/api/auth/refresh")
-          .set("Origin", origin)
-          .set("X-CSRF-Protection", "1")
-          .set("Cookie", refresh)
-          .send({})
-      ).status,
+      (await replayRefresh(server.app, refresh, randomUUID())).status,
     ).toBe(401);
     expect((await agent.get("/api/auth/me")).status).toBe(401);
   });

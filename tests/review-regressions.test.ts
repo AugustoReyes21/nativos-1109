@@ -1,14 +1,88 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { testDatabase } from "./helpers.js";
+import {
+  testDatabase,
+  seedUsers,
+  origin,
+  csrfPost,
+  testPassword,
+} from "./helpers.js";
+import { randomUUID } from "node:crypto";
 import { createApp } from "../server/app.js";
 import { diagnostic } from "../server/diagnostics.js";
 import request from "supertest";
 let context: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {
   context = await testDatabase();
+  await seedUsers(context.db);
 });
 afterAll(async () => {
   await context.db.end();
+});
+it("signed CSRF rejects missing tokens and matching forged cookie/header strings", async () => {
+  const { app } = createApp(context.db, context.c, async () => undefined);
+  for (const token of ["", "attacker-controlled.signature"]) {
+    const response = await request(app)
+      .post("/api/auth/login")
+      .set("Origin", origin)
+      .set("X-CSRF-Protection", "1")
+      .set("X-CSRF-Token", token)
+      .set("Cookie", ["csrf=" + token, "csrf-binding=attacker-binding"])
+      .send({});
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe("CSRF_REJECTED");
+  }
+  const malformed = await request(app)
+    .get("/api/auth/csrf")
+    .set("Cookie", "csrf=j%3A%7B%7D");
+  expect(malformed.status).toBe(200);
+});
+it("CSRF tokens cannot cross browser bindings or survive login elevation", async () => {
+  const { app } = createApp(context.db, context.c, async () => undefined);
+  const a = request.agent(app);
+  const anonymous = await a.get("/api/auth/csrf");
+  const token = anonymous.body.token as string;
+  const forgedBinding = await request(app)
+    .post("/api/auth/login")
+    .set("Origin", origin)
+    .set("X-CSRF-Protection", "1")
+    .set("X-CSRF-Token", token)
+    .set("Cookie", ["csrf=" + token, "csrf-binding=different-browser"])
+    .send({});
+  expect(forgedBinding.status).toBe(403);
+  expect(
+    (
+      await csrfPost(
+        a,
+        "post",
+        "/api/auth/login",
+        { email: "mesero@example.test", password: testPassword },
+        randomUUID(),
+      )
+    ).status,
+  ).toBe(200);
+  const stale = await a
+    .post("/api/auth/logout")
+    .set("Origin", origin)
+    .set("X-CSRF-Protection", "1")
+    .set("X-CSRF-Token", token)
+    .send({});
+  expect(stale.status).toBe(403);
+  expect(
+    (await csrfPost(a, "post", "/api/auth/logout", {}, randomUUID())).status,
+  ).toBe(200);
+});
+it("overload limiting rejects a burst without needing database access", async () => {
+  const { app } = createApp(context.db, context.c, async () => undefined);
+  for (let batch = 0; batch < 30; batch++) {
+    const responses = await Promise.all(
+      Array.from({ length: 100 }, () => request(app).get("/health/live")),
+    );
+    expect(responses.every((response) => response.status === 200)).toBe(true);
+  }
+  const limited = await request(app).get("/health/live");
+  expect(limited.status).toBe(429);
+  expect(limited.body.error.code).toBe("RATE_LIMITED");
+  expect(limited.headers["retry-after"]).toBeDefined();
 });
 it("diagnostics retain database cause and stack frames without messages, values or SQL", () => {
   const error = Object.assign(new Error("secret-password-in-a-query"), {

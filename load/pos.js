@@ -36,11 +36,14 @@ function params(cookies, key) {
   };
 }
 function send(path, data, cookies, key, method = "POST") {
+  const csrf = http.get(base + "/api/auth/csrf", params(cookies));
+  const options = params(cookies, key);
+  options.headers["X-CSRF-Token"] = csrf.json("token");
   return http.request(
     method,
     base + "/api" + path,
     JSON.stringify(data),
-    params(cookies, key),
+    options,
   );
 }
 function login(role) {
