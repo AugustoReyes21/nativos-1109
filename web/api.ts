@@ -1,0 +1,127 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public requestId?: string,
+  ) {
+    super(message);
+  }
+}
+async function rawRequest(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  key?: string,
+) {
+  let csrfToken: string | undefined;
+  if (method !== "GET") {
+    // Read a token for the current credential before mutations; never persist it.
+    const tokenResponse = await fetch("/api/auth/csrf", {
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!tokenResponse.ok) return tokenResponse;
+    csrfToken = ((await tokenResponse.json()) as { token: string }).token;
+  }
+  return fetch(`/api${path}`, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      ...(method !== "GET"
+        ? {
+            "Content-Type": "application/json",
+            "X-CSRF-Protection": "1",
+            "X-CSRF-Token": csrfToken!,
+          }
+        : {}),
+      ...(key ? { "Idempotency-Key": key } : {}),
+    },
+    body: data === undefined ? undefined : JSON.stringify(data),
+    signal: AbortSignal.timeout(15000),
+  });
+}
+let mutationQueue: Promise<unknown> = Promise.resolve();
+function raw(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  key?: string,
+): Promise<Response> {
+  const run = () => rawRequest(path, method, data, key);
+  if (method === "GET") return run();
+  // Cookie rotation and token issuance are serialized across tabs where supported.
+  if (navigator.locks)
+    return navigator.locks.request("nativos-csrf-mutation", run);
+  const operation = mutationQueue.then(run, run);
+  mutationQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
+}
+let renewing: Promise<boolean> | null = null;
+let refreshAttempt: string | null = null;
+async function renew() {
+  const run = async () => {
+    if ((await raw("/auth/me")).ok) return true;
+    refreshAttempt ??=
+      localStorage.getItem("nativos:refresh-attempt") ?? crypto.randomUUID();
+    localStorage.setItem("nativos:refresh-attempt", refreshAttempt);
+    const response = await raw("/auth/refresh", "POST", {}, refreshAttempt);
+    // This is only a request UUID, not an authentication token. Preserve on network failure.
+    localStorage.removeItem("nativos:refresh-attempt");
+    refreshAttempt = null;
+    return response.ok;
+  };
+  renewing ??= (
+    navigator.locks
+      ? navigator.locks.request("nativos-session-refresh", run)
+      : run()
+  ).finally(() => {
+    renewing = null;
+  });
+  return renewing;
+}
+export async function api<T>(
+  path: string,
+  method = "GET",
+  data?: unknown,
+  key?: string,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await raw(path, method, data, key);
+    if (
+      response.status === 401 &&
+      (!path.startsWith("/auth/") || path === "/auth/me") &&
+      (await renew())
+    )
+      response = await raw(path, method, data, key);
+  } catch {
+    throw new ApiError(
+      "No se pudo confirmar la operación. Conserva esta pantalla y reintenta al recuperar conexión.",
+      "NETWORK_ERROR",
+    );
+  }
+  const json = (await response.json()) as T & {
+    error?: { message: string; code: string; requestId: string };
+  };
+  if (!response.ok)
+    throw new ApiError(
+      json.error?.message ?? "Error del servidor",
+      json.error?.code ?? "UNKNOWN",
+      json.error?.requestId,
+    );
+  return json;
+}
+export const money = (cents: number | string) =>
+  new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(
+    Number(cents) / 100,
+  );
+export function toCents(value: FormDataEntryValue | null): number {
+  const text = String(value ?? "");
+  if (!/^\d+(\.\d{1,2})?$/.test(text))
+    throw new Error("Introduce un importe válido con hasta dos decimales");
+  const [whole, fraction = ""] = text.split(".");
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+}

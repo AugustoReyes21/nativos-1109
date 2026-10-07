@@ -46,3 +46,26 @@ Revisar cada componente creado: arquitectura, frontend/accesibilidad/dispositivo
 - https://www.postgresql.org/docs/18/explicit-locking.html
 - https://render.com/docs/health-checks
 - https://render.com/docs/deploys
+
+## Revalidación del primer bloque — 2026-10-07
+
+Código propuesto en [PR #2](https://github.com/AugustoReyes21/nativos-1109/pull/2). Claude publicó revisión independiente en su rama y [issue #1](https://github.com/AugustoReyes21/nativos-1109/issues/1); integrada mediante merge, conservando su historial y migración 002.
+
+Implementado: monolito TypeScript/React/Express/PostgreSQL, migraciones, sesiones seguras/MFA/RBAC, catálogo/stock/versiones, órdenes idempotentes, KDS SSE, pagos/caja transaccionales, auditoría append-only, errores/logging, headers, CI y Blueprint Render.
+
+Hallazgos resueltos con pruebas: 500 en cierre de caja; omisión de órdenes activas tras 200 registros; desconexión persistente tras recuperar red; NAT bloqueado por logins exitosos; falta de constraints financieros; reintento legítimo de refresh tras respuesta perdida; texto NUL que causaba 500; readiness incompleto. Audit ahora registra importes y estados, diagnóstico de errores conserva SQLSTATE/constraint/stack sin parámetros. Argon2 limitado a dos operaciones concurrentes. Protección para conservar administrador activo.
+
+Resultado local actualizado: 74 pruebas unitarias/API/DB y 3 E2E (escritorio/tablet/móvil) pasan. 0 vulnerabilidades npm; Gitleaks del historial sin hallazgos. ZAP baseline: se corrigieron font-src demasiado abierto y COEP ausente; quedan avisos informativos de aplicación moderna y cache de assets públicos. Alcance ZAP no autenticado.
+
+Estado de hallazgos iniciales: A01–A06/A08/A10 tienen implementación y evidencia local, pero permanecen pendientes de revisión final/despliegue real. A07/A09 requieren acceso Render y mediciones/restauración/red del restaurante. No se declara producción lista.
+
+Pendientes relevantes: SMTP real y eliminar canal temporal en forgot-password (outbox), retención automática, editor de roles/permisos, gestión completa MFA en UI, ampliación de órdenes ya enviadas, comprobantes fiscales/impresoras, roles DB mínimos, backup/restauración, validación de proxy y jornada real. Más detalle en SECURITY.md y matriz de Claude.
+# Revalidación de CI y controles HTTP (2026-10-07)
+
+**HIGH / P1 — gate SAST incompleto (corregido en código, revalidación remota requerida):** la primera ejecución verde de Actions no equivalía a ausencia de hallazgos. CodeQL reportaba 22 alertas (21 rate limiting, 1 CSRF); el lector SARIF buscaba exclusivamente reglas en driver y omitía su severidad ubicada en extensions. Se corrige resolución de componentes/defaultConfiguration y comportamiento fail-closed; tres regresiones automatizadas cubren el defecto. No hay suppressions ni dismissals.
+
+**HIGH / P1 — superficie sin tope global pre-DB:** existían límites persistentes de operaciones sensibles, pero lecturas/archivos/health no tenían cap de ráfaga. Se agrega express-rate-limit antes de DB y sin retirar límites especializados. Las alertas sobre login incluían limitadores propios no modelados por CodeQL; no se asumió que todas fueran explotables ni se ignoró la ausencia real en otras rutas.
+
+**MEDIUM / P1 — defensa CSRF reforzada:** Origin exacto + JSON + custom header ya bloqueaban solicitudes cross-site simples, pero se agrega double-submit firmado y ligado a credencial con csrf-csrf. Pruebas rechazan tokens ausentes/forjados, cookie/header iguales sin HMAC válido, intercambio entre navegadores y uso posterior a login; cookie JSON malformada no produce 500. Las aserciones de concurrencia/refresh de Claude se conservan, adaptando solo transporte CSRF.
+
+Validación local del bloque: lint/typecheck/build, 80 pruebas unitarias/API/DB. E2E y CodeQL/ZAP se reejecutan sobre el commit final; consultar PR #2 para evidencia final. Las cifras de carga previas corresponden al protocolo anterior a este refuerzo y no deben presentarse como medida del commit final.
