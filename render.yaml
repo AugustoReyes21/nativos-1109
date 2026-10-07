@@ -1,4 +1,4 @@
-# Staging by default. Connect Render before provisioning.
+# Staging only. Current deployment and expiry are recorded in docs/DEPLOYMENT.md.
 services:
   - type: web
     name: nativos1109
@@ -10,6 +10,9 @@ services:
     startCommand: node dist/server/migrate.js && node dist/server/main.js
     healthCheckPath: /health/ready
     autoDeployTrigger: checksPass
+    buildFilter:
+      ignoredPaths:
+        - docs/**
     envVars:
       - key: NODE_ENV
         value: production
