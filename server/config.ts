@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 const schema = z
@@ -21,6 +22,13 @@ const schema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASSWORD: z.string().optional(),
     MAIL_FROM: z.string().optional(),
+    // Public IPs of the restaurant (comma-separated). Logins from them are exempt
+    // from the per-account cap, so an external attacker cannot lock staff out.
+    TRUSTED_LOGIN_IPS: z
+      .string()
+      .default("")
+      .transform((v) => v.split(",").map((ip) => ip.trim()).filter(Boolean))
+      .refine((ips) => ips.every((ip) => isIP(ip) !== 0), "Invalid IP address"),
   })
   .superRefine((v, ctx) => {
     if (v.NODE_ENV === "production" && !v.APP_ORIGIN.startsWith("https://")) {

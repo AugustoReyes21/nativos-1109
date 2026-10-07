@@ -22,11 +22,12 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Cookies HttpOnly + SameSite=Strict (+ Secure/`__Host-` en prod) | C *requires admin MFA...* (dev); prod ⏳ | ✅ / ⏳ |
 | CSRF: sin cabecera/origen ajeno → 403 | C *rejects missing CSRF protection, cross-origin* | ✅ |
 | Restaurante tras NAT puede iniciar turno (25 logins) | A *a whole restaurant behind one NAT IP* | ✅ |
-| Una IP que rocía contraseñas en varias cuentas no logra entrar | A *one IP spraying passwords across accounts* | ❌ R2-01 |
-| Intentos distribuidos desde muchas IPs contra una cuenta tienen tope | A *distributed guessing from many IPs against one account* | ❌ R2-01 |
+| Una IP que rocía contraseñas en varias cuentas no logra entrar | A *one IP spraying passwords across accounts* | ✅ |
+| Intentos distribuidos desde muchas IPs contra una cuenta tienen tope | A *distributed guessing from many IPs against one account* (incl. IP confiable del restaurante entra durante el ataque) | ✅ |
 | Un tercero no puede bloquear la cuenta de un empleado | ⏳ (requiere IPs distintas; ver F04) | ⏳ |
 | Recuperación: respuesta genérica, token de un uso, revoca sesiones | C *consumes recovery codes once and returns generic password reset* | ✅ |
-| Recuperación sin diferencia de tiempo por existencia de cuenta | ⏳ | ❌ F11 (por lectura) |
+| Recuperación sin diferencia de tiempo por existencia de cuenta | A *password reset does not wait for the mail server* | ✅ |
+| Reintento de refresh tras 4 min funciona; tras 6 min revoca | A *refresh retry window survives a 4-minute outage* | ✅ |
 
 ## MFA
 
@@ -36,7 +37,7 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | Secreto cifrado en BD, mostrado una sola vez | C *requires admin MFA...* | ✅ |
 | TOTP no reutilizable | A *a TOTP code cannot be replayed* | ✅ |
 | Fuerza bruta sobre un desafío real cortada (y el código correcto también) | A *MFA brute force against a real challenge* | ✅ |
-| Fuerza bruta (prueba de Codex) | C *limits MFA brute force* | ⚠️ F12 (sin desafío real) |
+| Fuerza bruta (prueba de Codex) | C *limits MFA brute force* | ✅ (corregida: desafío real) |
 | Códigos de recuperación de un solo uso | C *consumes recovery codes once* | ✅ |
 | Admin no puede desactivar MFA | ⏳ | ⏳ |
 | Recuperación de admin sin autenticador | runbook | ⏳ (no existe) |
@@ -143,7 +144,11 @@ Resultado: ✅ pasa · ❌ falla (hallazgo) · ⏳ sin prueba todavía · ⚠️
 | `npm audit --omit=dev` sin HIGH/CRITICAL | manual | ✅ (0) |
 | Escaneo de secretos | `npm run scan:secrets` + gitleaks en CI | ✅ |
 | Lint y typecheck limpios | `npm run lint`, `npm run typecheck` | ✅ |
-| El CI bloquea merges con checks en rojo | protección de `main` | ❌ R2-02 (rama sin protección) |
+| Toda suite nueva corre en CI sin listarla a mano | `test:integration` = todo excepto unitarias | ✅ (`maintenance.test.ts` incluida automáticamente) |
+| Retención de tablas auxiliares sin tocar negocio ni bitácora | D *maintenance* | ✅ |
+| `paid_at` lo escribe solo la BD | D *paid marker (004)* (2) | ✅ |
+| Lista de órdenes rápida con historial grande | `EXPLAIN ANALYZE`, 200k órdenes | ✅ ~2 ms (antes ~370 ms) |
+| El CI bloquea merges con checks en rojo | protección de `main` | ver informe ronda 2 |
 | Un `test.only` olvidado hace fallar el CI E2E | `forbidOnly` comprobado con `CI=1` | ✅ (rama round2) |
-| Backups y persistencia de la BD de producción | `render.yaml` | ❌ R2-03 (plan free: expira a 30 días, sin backups) |
+| Backups y persistencia de la BD de producción | `render.yaml` | ⏳ R2-03 aceptado para pruebas; obligatorio plan de pago antes de ventas reales |
 | `trust proxy` correcto en Render | manual en Render | ⏳ T-NET-3 |
