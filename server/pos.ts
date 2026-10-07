@@ -11,6 +11,7 @@ import {
 } from "./common.js";
 import { passwordHash, passwordSchema, total } from "./security.js";
 import type { auth } from "./auth.js";
+import { checkout, paymentSchema, paymentParts } from "./checkout.js";
 import {
   tableClaims,
   lockTables,
@@ -33,12 +34,16 @@ type Order = {
   total_cents: number;
   courtesy_cents: number;
   version: number;
+  sent_to_cash_at: Date | null;
 };
 type Shift = {
   id: string;
   user_id: string;
   opening_cents: number;
   closed_at: Date | null;
+  closure_requested_at: Date | null;
+  closure_counted_cents: number | null;
+  closure_request_id: string | null;
 };
 const name = z.string().trim().min(1).max(100);
 const tableSchema = z
@@ -76,16 +81,23 @@ const orderSchema = z
   })
   .strict();
 
-async function shift(tx: TX, req: Request) {
+async function shift(tx: TX, req: Request, allowClosing = false) {
   const s = (
     await tx.query<Shift>(
       "SELECT * FROM cash_shifts WHERE closed_at IS NULL FOR UPDATE",
     )
   ).rows[0];
   if (!s) return fail(409, "CASH_CLOSED", "Abre la caja antes de continuar");
+  if (s.closure_requested_at && !allowClosing)
+    fail(
+      409,
+      "CLOSURE_PENDING",
+      "Caja suspendida hasta autorización del cierre",
+    );
   if (
     s.user_id !== identity(req).id &&
-    !identity(req).permissions.includes("settings.manage")
+    !identity(req).permissions.includes("settings.manage") &&
+    !(allowClosing && identity(req).permissions.includes("cash.close.approve"))
   )
     fail(403, "FORBIDDEN", "La caja pertenece a otro usuario");
   return s;
@@ -108,6 +120,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   const p = security.permit;
   app.use("/api", security.requireUser);
   tableClaims(app, db, security);
+  checkout(app, db, security);
   app.get("/api/catalog", p("products.read"), async (_req, res) => {
     const [products, categories, tables] = await Promise.all([
       db.query("SELECT * FROM products ORDER BY name"),
@@ -554,7 +567,7 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   });
   app.get("/api/cash", p("cash.read"), async (_req, res) => {
     const result = await db.query(`SELECT s.*,
-      s.opening_cents+COALESCE((SELECT sum(amount_cents) FROM payments WHERE shift_id=s.id AND method='EFECTIVO'),0)
+      s.opening_cents+COALESCE((SELECT sum(cash_cents) FROM payments WHERE shift_id=s.id),0)
       +COALESCE((SELECT sum(amount_cents) FROM cash_movements WHERE shift_id=s.id),0) AS current_expected_cents
       FROM cash_shifts s ORDER BY opened_at DESC LIMIT 20`);
     res.json(result.rows);
@@ -627,18 +640,37 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     );
     res.status(201).json(result);
   });
-  app.post("/api/cash/close", p("cash.close"), async (req, res) => {
+  app.post("/api/cash/close", p("cash.close.approve"), async (req, res) => {
     const input = z
-      .object({ countedCents: cents, shiftId: idSchema })
+      .object({
+        countedCents: cents,
+        shiftId: idSchema,
+        requestId: idSchema.optional(),
+      })
       .strict()
       .parse(req.body);
     const result = await transaction(db, (tx) =>
       idempotent(tx, req, "cash-close", input, async () => {
-        const s = await shift(tx, req);
+        const s = await shift(tx, req, true);
         if (s.id !== input.shiftId) fail(409, "STALE_SHIFT", "La caja cambió");
+        if ((input.requestId ?? null) !== s.closure_request_id)
+          fail(
+            409,
+            "STALE_CLOSE_REQUEST",
+            "La solicitud de cierre cambió. Actualiza antes de autorizar",
+          );
+        if (
+          s.closure_requested_at &&
+          s.closure_counted_cents !== input.countedCents
+        )
+          fail(
+            409,
+            "CLOSURE_AMOUNT_CHANGED",
+            "El contado debe coincidir con la solicitud",
+          );
         const sales = (
           await tx.query<{ n: string }>(
-            "SELECT COALESCE(sum(amount_cents),0) AS n FROM payments WHERE shift_id=$1 AND method='EFECTIVO'",
+            "SELECT COALESCE(sum(cash_cents),0) AS n FROM payments WHERE shift_id=$1",
             [s.id],
           )
         ).rows[0]!;
@@ -652,8 +684,14 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
           s.opening_cents + Number(sales.n) + Number(movements.n);
         const r = (
           await tx.query(
-            "UPDATE cash_shifts SET closed_at=now(),counted_cents=$1,expected_cents=$2,difference_cents=$3 WHERE id=$4 RETURNING *",
-            [input.countedCents, expected, input.countedCents - expected, s.id],
+            "UPDATE cash_shifts SET closed_at=now(),counted_cents=$1,expected_cents=$2,difference_cents=$3,closure_approved_by=$5 WHERE id=$4 RETURNING *",
+            [
+              input.countedCents,
+              expected,
+              input.countedCents - expected,
+              s.id,
+              identity(req).id,
+            ],
           )
         ).rows[0];
         await audit(
@@ -677,14 +715,13 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
     res.json(result);
   });
   app.post("/api/payments", p("payments.create"), async (req, res) => {
-    const input = z
-      .object({
-        orderId: idSchema,
-        method: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA"]),
-        tenderedCents: cents,
-      })
-      .strict()
-      .parse(req.body);
+    const input = paymentSchema.parse(req.body);
+    if (input.documentKind === "FACTURA")
+      fail(
+        503,
+        "FEL_NOT_CONFIGURED",
+        "No se realizó el cobro: configura y valida el certificador FEL antes de emitir facturas",
+      );
     const result = await transaction(db, (tx) =>
       idempotent(tx, req, "payment", input, async () => {
         const s = await shift(tx, req);
@@ -701,14 +738,16 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
         )
           fail(409, "ALREADY_PAID", "La orden ya fue cobrada");
         const due = o.total_cents - o.courtesy_cents;
-        if (
-          input.tenderedCents < due ||
-          (input.method !== "EFECTIVO" && input.tenderedCents !== due)
-        )
-          fail(400, "INVALID_AMOUNT", "El importe no corresponde al total");
+        const parts = paymentParts(due, input);
+        if (!o.sent_to_cash_at)
+          fail(
+            409,
+            "ORDER_NOT_SENT_TO_CASH",
+            "El mesero debe enviar la cuenta a caja antes de cobrar",
+          );
         const payment = (
           await tx.query<{ id: string }>(
-            "INSERT INTO payments(order_id,shift_id,user_id,method,amount_cents,tendered_cents,change_cents) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",
+            "INSERT INTO payments(order_id,shift_id,user_id,method,amount_cents,tendered_cents,change_cents,mixed_card_cents,receiver_type,receiver_id,receiver_name,receiver_address) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
             [
               o.id,
               s.id,
@@ -716,7 +755,12 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
               input.method,
               due,
               input.tenderedCents,
-              input.tenderedCents - due,
+              parts.change,
+              parts.mixedCard,
+              input.receiver.type,
+              input.receiver.id,
+              input.receiver.name,
+              input.receiver.address,
             ],
           )
         ).rows[0]!;
@@ -868,8 +912,11 @@ export function pos(app: Express, db: DB, security: ReturnType<typeof auth>) {
   });
   app.get("/api/audit", p("audit.read"), async (_req, res) =>
     res.json(
-      (await db.query("SELECT * FROM audit_log ORDER BY id DESC LIMIT 100"))
-        .rows,
+      (
+        await db.query(
+          "SELECT a.*,u.name AS user_name FROM audit_log a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100",
+        )
+      ).rows,
     ),
   );
   app.get("/api/users", p("users.manage"), async (_req, res) =>

@@ -102,6 +102,13 @@ export default function (data) {
     "PATCH",
   );
   check(ready, { "kitchen ready": (r) => r.status === 200 });
+  const sent = send(
+    "/orders/" + id + "/send-to-cash",
+    { version: 3 },
+    data.waiter,
+    uuid(),
+  );
+  check(sent, { "bill sent to cashier": (r) => r.status === 200 });
   const payKey = uuid(),
     payment = { orderId: id, method: "EFECTIVO", tenderedCents: 1000 };
   const paid = send("/payments", payment, data.cashier, payKey);
